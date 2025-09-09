@@ -20,4 +20,4 @@ spec:
     - ReadOnlyMany
   resources:
     requests:
-      storage: 1000Gi
+      storage: 990Gi
