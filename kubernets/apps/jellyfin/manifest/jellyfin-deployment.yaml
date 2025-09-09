@@ -32,6 +32,13 @@ spec:
           value: "all"
         - name: NVIDIA_DRIVER_CAPABILITIES
           value: "all"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - "ALL"
+          runAsUser: 1000
+          runAsGroup: 1000
         ports:
         - containerPort: 8096
           protocol: TCP
