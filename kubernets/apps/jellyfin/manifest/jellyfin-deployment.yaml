@@ -53,9 +53,9 @@ spec:
           mountPath: /config
         - name: jellyfin-data-storage
           mountPath: /data
-        resources:
-          limits:
-            nvidia.com/gpu: 1
+        #resources:
+         # limits:
+          #  nvidia.com/gpu: 1
       volumes:
       - name: jellyfin-config-storage
         persistentVolumeClaim:
