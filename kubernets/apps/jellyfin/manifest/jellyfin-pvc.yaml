@@ -3,19 +3,21 @@ kind: PersistentVolumeClaim
 metadata:
   name: jellyfin-config-pvc
 spec:
+  storageClassName: nfs-storage # Replace with your storage class name
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi # Adjust the size as needed for your config
+      storage: 10Gi
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: jellyfin-data-pvc
 spec:
+  storageClassName: nfs-storage # Replace with your storage class name
   accessModes:
-    - ReadOnlyMany # Assuming your media data is read-only for the pod
+    - ReadOnlyMany
   resources:
     requests:
-      storage: 500Gi # Adjust the size as needed for your media library
+      storage: 1000Gi
