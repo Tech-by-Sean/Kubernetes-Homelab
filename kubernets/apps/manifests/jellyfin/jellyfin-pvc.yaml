@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-config-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi # Adjust the size as needed for your config
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-data-pvc
+spec:
+  accessModes:
+    - ReadOnlyMany # Assuming your media data is read-only for the pod
+  resources:
+    requests:
+      storage: 500Gi # Adjust the size as needed for your media library
