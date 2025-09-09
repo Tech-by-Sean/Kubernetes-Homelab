@@ -12,6 +12,10 @@ spec:
       labels:
         app: jellyfin
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: jellyfin
         image: lscr.io/linuxserver/jellyfin:latest
