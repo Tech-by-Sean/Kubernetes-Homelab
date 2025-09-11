@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: jellyfin-deployment
+  labels:
+    app: jellyfin
 spec:
   replicas: 1
   selector:
@@ -12,50 +14,38 @@ spec:
       labels:
         app: jellyfin
     spec:
-      securityContext:
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
-      tolerations:
-      - key: "node-role.kubernetes.io/control-plane"
-        operator: "Exists"
-        effect: "NoSchedule"
       containers:
       - name: jellyfin
-        image: lscr.io/linuxserver/jellyfin:latest
-        env:
-        - name: PUID
-          value: "1000"
-        - name: PGID
-          value: "1000"
-        - name: TZ
-          value: "America/Los_Angeles"
-        - name: JELLYFIN_PublishedServerUrl
-          value: "http://10.0.0.101"
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-              - "ALL"
-          runAsUser: 1000
-          runAsGroup: 1000
+        image: jellyfin/jellyfin:latest
         ports:
-        - containerPort: 8096
-          protocol: TCP
-        - containerPort: 8920
-          protocol: TCP
-        - containerPort: 7359
-          protocol: UDP
-        - containerPort: 1900
-          protocol: UDP
+          - containerPort: 8096
         volumeMounts:
-        - name: jellyfin-storage
-          mountPath: /config
-          subPath: config
-        - name: jellyfin-storage
-          mountPath: /data
-          subPath: data
+          - name: jellyfin-config
+            mountPath: /config
+          - name: jellyfin-media
+            mountPath: /media
+        env:
+          - name: PUID
+            value: "1000"
+          - name: PGID
+            value: "1000"
       volumes:
-      - name: jellyfin-storage
-        persistentVolumeClaim:
-          claimName: jellyfin-main-pvc
+        - name: jellyfin-config
+          persistentVolumeClaim:
+            claimName: jellyfin-config-pvc
+        - name: jellyfin-media
+          persistentVolumeClaim:
+            claimName: jellyfin-media-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jellyfin-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: jellyfin
+  ports:
+    - protocol: TCP
+      port: 8096
+      targetPort: 8096

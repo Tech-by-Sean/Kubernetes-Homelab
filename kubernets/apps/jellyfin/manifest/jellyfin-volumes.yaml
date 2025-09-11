@@ -1,0 +1,19 @@
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: jellyfin-config
+provisioning:
+  diskSelector:
+    # IMPORTANT: Adjust this selector to match a disk on your worker node
+    match: disk.size > 100GB
+  minSize: 5GB
+  maxSize: 10GB
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: jellyfin-media
+provisioning:
+  diskSelector:
+    # IMPORTANT: Adjust this selector to match your media drive
+    match: disk.size > 1TB
+  minSize: 500GB
+  maxSize: 2TB
