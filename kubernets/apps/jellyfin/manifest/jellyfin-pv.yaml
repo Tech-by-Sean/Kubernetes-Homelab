@@ -12,7 +12,7 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: local-storage
   hostPath:
-    path: /mnt/jellyfin-data # The single mount point for the whole disk
+    path: /mnt/jellyfin-data
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -20,4 +20,4 @@ spec:
             - key: kubernetes.io/hostname
               operator: In
               values:
-                - 10.10.5.200 # Your worker node's IP
+                - talos-worker-01 # ⚠️ Replace this with the actual hostname
