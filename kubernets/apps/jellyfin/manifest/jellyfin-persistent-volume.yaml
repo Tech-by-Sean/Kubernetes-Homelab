@@ -1,0 +1,23 @@
+# jellyfin-pv.yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jellyfin-main-pv
+spec:
+  capacity:
+    storage: 1100Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /mnt/jellyfin-data # The single mount point for the whole disk
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - 10.10.5.200 # Your worker node's IP

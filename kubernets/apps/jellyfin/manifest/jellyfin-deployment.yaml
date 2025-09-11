@@ -28,10 +28,13 @@ spec:
           value: "America/Los_Angeles"
         - name: JELLYFIN_PublishedServerUrl
           value: "http://10.0.0.101"
-        - name: NVIDIA_VISIBLE_DEVICES
-          value: "all"
-        - name: NVIDIA_DRIVER_CAPABILITIES
-          value: "all"
+
+        # NVIDIA GPU support is commented out until the GPU operator is installed.
+        # - name: NVIDIA_VISIBLE_DEVICES
+        #   value: "all"
+        # - name: NVIDIA_DRIVER_CAPABILITIES
+        #   value: "all"
+
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -49,17 +52,16 @@ spec:
         - containerPort: 1900
           protocol: UDP
         volumeMounts:
-        - name: jellyfin-config-storage
+        - name: jellyfin-storage
           mountPath: /config
-        - name: jellyfin-data-storage
+          subPath: config
+        - name: jellyfin-storage
           mountPath: /data
-        #resources:
-         # limits:
-          #  nvidia.com/gpu: 1
+          subPath: data
+        # resources:
+        #   limits:
+        #     nvidia.com/gpu: 1
       volumes:
-      - name: jellyfin-config-storage
+      - name: jellyfin-storage
         persistentVolumeClaim:
-          claimName: jellyfin-config-pvc
-      - name: jellyfin-data-storage
-        persistentVolumeClaim:
-          claimName: jellyfin-data-pvc
+          claimName: jellyfin-main-pvc
