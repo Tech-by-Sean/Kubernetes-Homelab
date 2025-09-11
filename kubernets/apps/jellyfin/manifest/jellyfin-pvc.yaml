@@ -1,23 +1,12 @@
+# jellyfin-pvc.yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: jellyfin-config-pvc
+  name: jellyfin-main-pvc
 spec:
-  storageClassName: nfs-storage # Replace with your storage class name
+  storageClassName: local-storage
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: jellyfin-data-pvc
-spec:
-  storageClassName: nfs-storage # Replace with your storage class name
-  accessModes:
-    - ReadOnlyMany
-  resources:
-    requests:
-      storage: 990Gi
+      storage: 1000Gi
