@@ -29,6 +29,15 @@ spec:
             value: "1000"
           - name: PGID
             value: "1000"
+        # ADD THIS SECTION
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
       volumes:
         - name: jellyfin-config
           persistentVolumeClaim:
