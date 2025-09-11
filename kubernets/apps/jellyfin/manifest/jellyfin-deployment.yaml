@@ -16,6 +16,10 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
       containers:
       - name: jellyfin
         image: lscr.io/linuxserver/jellyfin:latest
@@ -28,13 +32,6 @@ spec:
           value: "America/Los_Angeles"
         - name: JELLYFIN_PublishedServerUrl
           value: "http://10.0.0.101"
-
-        # NVIDIA GPU support is commented out until the GPU operator is installed.
-        # - name: NVIDIA_VISIBLE_DEVICES
-        #   value: "all"
-        # - name: NVIDIA_DRIVER_CAPABILITIES
-        #   value: "all"
-
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -58,9 +55,6 @@ spec:
         - name: jellyfin-storage
           mountPath: /data
           subPath: data
-        # resources:
-        #   limits:
-        #     nvidia.com/gpu: 1
       volumes:
       - name: jellyfin-storage
         persistentVolumeClaim:
