@@ -4,17 +4,15 @@ kind: UserVolumeConfig
 name: jellyfin-config
 provisioning:
   diskSelector:
-    # Use 'u' suffix to explicitly define as an unsigned integer
-    match: disk.size > 100000000000u
-  minSize: 5GB
-  maxSize: 10GB
+    match: disk.size > 100000000000u # 100GB
+  minSize: 5000000000 # 5GB
+  maxSize: 10000000000 # 10GB
 ---
 apiVersion: v1alpha1
 kind: UserVolumeConfig
 name: jellyfin-media
 provisioning:
   diskSelector:
-    # Use 'u' suffix for the unsigned integer comparison
-    match: disk.size > 1000000000000u
-  minSize: 500GB
-  maxSize: 2TB
+    match: disk.size > 1000000000000u # 1TB
+  minSize: 500000000000 # 500GB
+  maxSize: 1000000000000 # 1TB
