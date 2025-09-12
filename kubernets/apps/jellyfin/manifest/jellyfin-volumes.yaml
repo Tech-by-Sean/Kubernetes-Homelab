@@ -4,7 +4,7 @@ kind: UserVolumeConfig
 name: jellyfin-config
 provisioning:
   diskSelector:
-    match: disk.id == 'sda'
+    match: disk.model == 'QEMU HARDDISK'
   minSize: 5000000000 # 5GB
   maxSize: 10000000000 # 10GB
 ---
@@ -13,6 +13,6 @@ kind: UserVolumeConfig
 name: jellyfin-media
 provisioning:
   diskSelector:
-    match: disk.id == 'sda'
+    match: disk.model == 'QEMU HARDDISK'
   minSize: 500000000000 # 500GB
   maxSize: 1000000000000 # 1TB
