@@ -1,0 +1,27 @@
+# traefik-values.yaml
+
+# Enable the Kubernetes Gateway API provider
+providers:
+  kubernetesGateway:
+    enabled: true
+
+# Define entrypoints (ports) for incoming traffic
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+# Traefik requires a LoadBalancer service to expose itself externally.
+# This assumes you have MetalLB or a similar solution running.
+service:
+  type: LoadBalancer
+
+# Optional: Enable the dashboard (access will need further setup for security)
+dashboard:
+  enabled: true
+  
+# Optional: Enable the metrics for Prometheus
+metrics:
+  prometheus:
+    enabled: true
