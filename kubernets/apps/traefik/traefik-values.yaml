@@ -1,4 +1,4 @@
-# traefik-values.yaml
+# traefik-values.yaml - Corrected for Dual MetalLB Service Setup
 
 # Enable the Kubernetes Gateway API provider
 providers:
@@ -12,10 +12,14 @@ entryPoints:
   websecure:
     address: ":443"
 
-# Traefik requires a LoadBalancer service to expose itself externally.
-# This assumes you have MetalLB or a similar solution running.
+# CRUCIAL CHANGE: Disable the default service so we can manually
+# create two services, each annotated for a different MetalLB pool.
 service:
-  type: LoadBalancer
+  enabled: false # <--- This is the required change!
+
+# Ensure the deployment gets a predictable name for the manual selector
+deployment:
+  name: traefik-deployment # Helps with Service selector below
 
 # Optional: Enable the dashboard (access will need further setup for security)
 dashboard:
