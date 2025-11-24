@@ -1,27 +1,9 @@
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata:
-  name: media-pool
+  name: first-pool
   namespace: metallb-system
 spec:
   addresses:
-  - 192.168.3.220
-
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
-metadata:
-  name: server-pool
-  namespace: metallb-system
-spec:
-  addresses:
-  - 10.10.5.220
-
-apiVersion: metallb.io/v1beta1
-kind: L2Advertisement
-metadata:
-  name: l2-advertisement-all
-  namespace: metallb-system
-spec:
-  ipAddressPools:
-  - media-pool
-  - server-pool
+  - 10.10.5.0/24
+  - 10.10.5.240-10.10.5.250
