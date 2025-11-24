@@ -4142,7 +4142,7 @@ metadata:
   name: longhorn-backend
   namespace: longhorn-system
 spec:
-  type: ClusterIP
+  type: LoadBalancer
   selector:
     app: longhorn-manager
   ports:
@@ -4162,7 +4162,7 @@ metadata:
   name: longhorn-frontend
   namespace: longhorn-system
 spec:
-  type: ClusterIP
+  type: LoadBalancer
   selector:
     app: longhorn-ui
   ports:
@@ -4183,7 +4183,7 @@ metadata:
   name: longhorn-admission-webhook
   namespace: longhorn-system
 spec:
-  type: ClusterIP
+  type: LoadBalancer
   selector:
     longhorn.io/admission-webhook: longhorn-admission-webhook
   ports:
@@ -4203,7 +4203,7 @@ metadata:
   name: longhorn-recovery-backend
   namespace: longhorn-system
 spec:
-  type: ClusterIP
+  type: LoadBalancer
   selector:
     longhorn.io/recovery-backend: longhorn-recovery-backend
   ports:
