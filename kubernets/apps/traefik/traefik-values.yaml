@@ -1,0 +1,31 @@
+# traefik-values.yaml - Corrected for Dual MetalLB Service Setup
+
+# Enable the Kubernetes Gateway API provider
+providers:
+  kubernetesGateway:
+    enabled: true
+
+# Define entrypoints (ports) for incoming traffic
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+# CRUCIAL CHANGE: Disable the default service so we can manually
+# create two services, each annotated for a different MetalLB pool.
+service:
+  enabled: false # <--- This is the required change!
+
+# Ensure the deployment gets a predictable name for the manual selector
+deployment:
+  name: traefik-deployment # Helps with Service selector below
+
+# Optional: Enable the dashboard (access will need further setup for security)
+dashboard:
+  enabled: true
+  
+# Optional: Enable the metrics for Prometheus
+metrics:
+  prometheus:
+    enabled: true
