@@ -29,7 +29,7 @@ kubectl apply -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homel
 Wait 30-60 seconds for the approver to be ready.
 
 ```bash
-kubectl get pods -n kube-system -l k8s-app=metrics-server
+kubectl get pods -n kubelet-serving-cert-approver
 ```
 
 ---
