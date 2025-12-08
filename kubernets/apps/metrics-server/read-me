@@ -1,72 +1,46 @@
-Step 1: Enable Kubelet Certificate Rotation in Talos Configuration
-For the Metrics Server to securely collect metrics from the kubelets, the kubelets need to present certificates that the Metrics Server trusts. The recommended approach in Talos is to enable kubelet certificate rotation. This must be applied to the machine configuration of all nodes (control plane and workers).
+🚀 Kubernetes Metrics Server Deployment Guide (Talos Clusters)
+This document outlines the two essential phases for successfully deploying the Kubernetes Metrics Server in a self-managed environment like Talos, including the mandatory infrastructure fix to ensure Kubelet certificate health and proper metric flow.
+📝 Prerequisites
+
+Working kubectl access to the target Talos cluster.
+The Metrics Server manifest (metrics-server.yaml) must be pre-edited with the following performance/stability flags:
+
+--kubelet-insecure-tls
+--kubelet-preferred-address-types=InternalIP
+--metric-resolution=15s
 
 
-Retrieve Current Configuration: Use talosctl to retrieve your current machine configuration (MC) for a node. You'll need the IP address of a node (e.g., $NODE_IP) and your talosconfig.
 
-Bash
 
-talosctl get mc $NODE_IP -o yaml > controlplane.yaml # For a control plane node
-# OR
-talosctl get mc $NODE_IP -o yaml > worker.yaml # For a worker node
-Edit the Configuration: Open the YAML file and add the rotate-server-certificates: true under machine.kubelet.extraArgs. You should also consider deploying a kubelet certificate approver (like kubelet-csr-approver) as an extra manifest to ensure the rotation is handled automatically.
+📄 Phase 1: Deploy Metrics Server Application
+This phase installs the Metrics Server pod using the custom, pre-configured manifest.
+Step 1: Apply the Metrics Server Manifest
+Apply the manifest directly from the Homelab repository.
+bashkubectl apply -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homelab/refs/heads/main/kubernets/apps/metrics-server/metrics-server.yaml
+Step 2: Verify Initial Pod Status
+Check the status of the new pod in the kube-system namespace. It will likely be 0/1 READY until the certificate issue is addressed in Phase 2.
+bashkubectl get pods -n kube-system -l k8s-app=metrics-server
 
-Example Snippet to Add/Modify:
+🔐 Phase 2: Deploy Kubelet TLS Infrastructure Fix
+This is the mandatory fix for the underlying "TLS internal error" that prevents the Metrics Server from scraping data. It deploys a controller to auto-approve Kubelet Certificate Signing Requests (CSRs).
+Step 3: Deploy Kubelet Serving Cert Approver
+Deploy the controller using the manifest from the Homelab repository.
+bashkubectl apply -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homelab/main/kubernets/apps/metrics-server/kubelet-cert-approver
+Step 4: Final Verification and Health Check
+Wait 1-2 minutes for the approver to sign the Kubelet certificates. Confirm that the Metrics Server is ready and the metrics API is functional.
+CommandExpected Success Resultkubectl get pods -n kube-system -l k8s-app=metrics-serverPod status must be 1/1 READY.kubectl top nodesMust display CPU and Memory utilization figures for all nodes.
+Success Note: Once kubectl top nodes is working, cluster monitoring tools like k9s will be fully operational.
 
-YAML
+🗑️ Phase 3: Uninstall / Cleanup Procedure
+To cleanly remove all components, use the following steps in reverse order.
+Step 5: Uninstall the Kubelet Serving Cert Approver
+Remove the approver controller first.
+bashkubectl delete -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homelab/main/kubernets/apps/metrics-server/kubelet-cert-approver
+Step 6: Uninstall the Metrics Server
+Remove the Metrics Server application components.
+bashkubectl delete -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homelab/refs/heads/main/kubernets/apps/metrics-server/metrics-server.yaml
+Step 7: Verification (Optional)
+You can confirm the complete removal by checking the API service:
+bashkubectl get apiservice v1beta1.metrics.k8s.io
+# Expected Output: Error from server (NotFound): apiservices.apiregistration.k8s.io "v1beta1.metrics.k8s.io" not found
 
-# ... other configuration above
-machine:
-  kubelet:
-    extraArgs:
-      # This enables automatic rotation of the Kubelet serving certificate
-      rotate-server-certificates: true 
-# ... other configuration below
-Apply the Modified Configuration: Apply the updated configuration file to the respective node(s) and reboot to apply the changes. This is a non-disruptive, declarative process in Talos.
-
-Bash
-
-talosctl apply-config --nodes $NODE_IP --file controlplane.yaml
-talosctl apply-config --nodes $NODE_IP --file worker.yaml # Repeat for all worker nodes
-Note: For new clusters, you can include this snippet when generating your initial configuration files.
-
-🚀 Step 2: Deploy the Kubernetes Metrics Server
-With the kubelet configured for certificate rotation, you can now deploy the Metrics Server itself. This is typically done using the official manifest.
-
-Install Metrics Server: Apply the official components.yaml manifest from the Kubernetes SIGs repository. This manifest creates the necessary Deployment, Service, and RBAC resources in the kube-system namespace.
-
-Bash
-
-kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
-Verify Deployment: Check that the Metrics Server pod is running and healthy:
-
-Bash
-
-kubectl get pods -n kube-system -l k8s-app=metrics-server
-Wait for the pod status to show Running.
-
-Verify Metrics API: Confirm that the Kubernetes API Aggregation layer has registered the metrics.k8s.io API.
-
-Bash
-
-kubectl get apiservices | grep metrics.k8s.io
-The output should show a status of True under the AVAILABLE column:
-
-v1beta1.metrics.k8s.io   kube-system/metrics-server   True    <age>
-🖥️ Step 3: Test with kubectl top and k9s
-Once the Metrics Server is running and available, both kubectl top and k9s will be able to retrieve resource utilization data.
-
-Test with kubectl top: Run the following commands to ensure metrics are being collected from the nodes and pods:
-
-Bash
-
-kubectl top nodes
-kubectl top pods -A
-If this works, you will see CPU and memory usage tables for your nodes and pods.
-
-Test with k9s: Launch k9s:
-
-Bash
-
-k9s
-You should now be able to see CPU and Memory utilization in the main pod/node views, and when using the pulses view (:pulses).
