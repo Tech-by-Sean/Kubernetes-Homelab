@@ -86,7 +86,8 @@ kubectl delete pods <pod name> -n kube-system
 Remove the approver controller last.
 
 ```bash
-kubectl delete namespace kubelet-serving-cert-approver #This will delete the namespace along with the pod.
+kubectl delete namespace kubelet-serving-cert-approver 
+#This will delete the namespace along with the pod.
 ```
 
 ### Step 8: Verification (Optional)
