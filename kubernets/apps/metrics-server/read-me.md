@@ -100,5 +100,3 @@ kubectl get apiservice v1beta1.metrics.k8s.io
 ```
 
 ---
-
-This document is now finalized in the precise GitHub Markdown format you requested. Do you have any other documentation tasks for your cluster?
