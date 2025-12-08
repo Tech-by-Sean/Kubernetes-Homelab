@@ -29,7 +29,7 @@ kubectl apply -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homel
 Wait 30-60 seconds for the approver to be ready.
 
 ```bash
-kubectl get pods -n kube-system | grep kubelet-csr-approver
+kubectl get pods -n kube-system -l k8s-app=metrics-server
 ```
 
 ---
@@ -78,7 +78,7 @@ To cleanly remove all components, use the following steps in reverse order.
 Remove the Metrics Server application components first.
 
 ```bash
-kubectl delete -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homelab/refs/heads/main/kubernets/apps/metrics-server/metrics-server.yaml
+kubectl delete pods <pod name> -n kube-system
 ```
 
 ### Step 7: Uninstall the Kubelet Serving Cert Approver
@@ -86,7 +86,7 @@ kubectl delete -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Home
 Remove the approver controller last.
 
 ```bash
-kubectl delete -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homelab/main/kubernets/apps/metrics-server/kubelet-cert-approver
+kubectl delete namespace kubelet-serving-cert-approver #This will delete the namespace along with the pod.
 ```
 
 ### Step 8: Verification (Optional)
