@@ -78,7 +78,7 @@ To cleanly remove all components, use the following steps in reverse order.
 Remove the Metrics Server application components first.
 
 ```bash
-kubectl delete pods <pod name> -n kube-system
+kubectl delete -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homelab/refs/heads/main/kubernets/apps/metrics-server/metrics-server.yaml
 ```
 
 ### Step 7: Uninstall the Kubelet Serving Cert Approver
