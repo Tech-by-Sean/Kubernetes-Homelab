@@ -1,46 +1,101 @@
-🚀 Kubernetes Metrics Server Deployment Guide (Talos Clusters)
-This document outlines the two essential phases for successfully deploying the Kubernetes Metrics Server in a self-managed environment like Talos, including the mandatory infrastructure fix to ensure Kubelet certificate health and proper metric flow.
-📝 Prerequisites
+# Deploying Metrics Server on Talos Kubernetes
 
-Working kubectl access to the target Talos cluster.
-The Metrics Server manifest (metrics-server.yaml) must be pre-edited with the following performance/stability flags:
+This guide covers deploying the Kubernetes Metrics Server in a Talos cluster, ensuring secure kubelet certificate handling.
 
---kubelet-insecure-tls
---kubelet-preferred-address-types=InternalIP
---metric-resolution=15s
+---
 
+## Table of Contents
 
+1. [Enable Kubelet Certificate Rotation](#step-1-enable-kubelet-certificate-rotation-in-talos-configuration)
+2. [Deploy Metrics Server](#step-2-deploy-the-kubernetes-metrics-server)
+3. [Verify Metrics Server](#step-3-test-with-kubectl-top-and-k9s)
 
+---
 
-📄 Phase 1: Deploy Metrics Server Application
-This phase installs the Metrics Server pod using the custom, pre-configured manifest.
-Step 1: Apply the Metrics Server Manifest
-Apply the manifest directly from the Homelab repository.
-bashkubectl apply -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homelab/refs/heads/main/kubernets/apps/metrics-server/metrics-server.yaml
-Step 2: Verify Initial Pod Status
-Check the status of the new pod in the kube-system namespace. It will likely be 0/1 READY until the certificate issue is addressed in Phase 2.
-bashkubectl get pods -n kube-system -l k8s-app=metrics-server
+## 🚀 Step 1: Enable Kubelet Certificate Rotation in Talos Configuration
 
-🔐 Phase 2: Deploy Kubelet TLS Infrastructure Fix
-This is the mandatory fix for the underlying "TLS internal error" that prevents the Metrics Server from scraping data. It deploys a controller to auto-approve Kubelet Certificate Signing Requests (CSRs).
-Step 3: Deploy Kubelet Serving Cert Approver
-Deploy the controller using the manifest from the Homelab repository.
-bashkubectl apply -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homelab/main/kubernets/apps/metrics-server/kubelet-cert-approver
-Step 4: Final Verification and Health Check
-Wait 1-2 minutes for the approver to sign the Kubelet certificates. Confirm that the Metrics Server is ready and the metrics API is functional.
-CommandExpected Success Resultkubectl get pods -n kube-system -l k8s-app=metrics-serverPod status must be 1/1 READY.kubectl top nodesMust display CPU and Memory utilization figures for all nodes.
-Success Note: Once kubectl top nodes is working, cluster monitoring tools like k9s will be fully operational.
+For the Metrics Server to securely collect metrics from the kubelets, the kubelets need trusted certificates. The recommended approach in Talos is to enable kubelet certificate rotation.
 
-🗑️ Phase 3: Uninstall / Cleanup Procedure
-To cleanly remove all components, use the following steps in reverse order.
-Step 5: Uninstall the Kubelet Serving Cert Approver
-Remove the approver controller first.
-bashkubectl delete -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homelab/main/kubernets/apps/metrics-server/kubelet-cert-approver
-Step 6: Uninstall the Metrics Server
-Remove the Metrics Server application components.
-bashkubectl delete -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homelab/refs/heads/main/kubernets/apps/metrics-server/metrics-server.yaml
-Step 7: Verification (Optional)
-You can confirm the complete removal by checking the API service:
-bashkubectl get apiservice v1beta1.metrics.k8s.io
-# Expected Output: Error from server (NotFound): apiservices.apiregistration.k8s.io "v1beta1.metrics.k8s.io" not found
+### 1. Retrieve Current Talos Machine Configuration
 
+```bash
+# For a control plane node
+talosctl get mc $NODE_IP -o yaml > controlplane.yaml
+# OR
+# For a worker node
+talosctl get mc $NODE_IP -o yaml > worker.yaml
+```
+
+### 2. Edit Configuration
+
+Add the following to your YAML under `machine.kubelet.extraArgs:`  
+You may also wish to deploy a kubelet certificate approver.
+
+```yaml
+# ... other configuration above
+machine:
+  kubelet:
+    extraArgs:
+      # Enable automatic kubelet serving certificate rotation
+      rotate-server-certificates: true 
+# ... other configuration below
+```
+
+### 3. Apply the Modified Configuration
+Apply and reboot for changes to take effect:
+```bash
+talosctl apply-config --nodes $NODE_IP --file controlplane.yaml
+talosctl apply-config --nodes $NODE_IP --file worker.yaml # Repeat for each worker node
+```
+> **Note:** For new clusters, include this snippet when generating the initial configuration.
+
+---
+
+## 📦 Step 2: Deploy the Kubernetes Metrics Server
+
+With the kubelet configured, deploy the Metrics Server using the official manifest:
+
+```bash
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+```
+
+### Verify Deployment
+
+Check Metrics Server pod status:
+```bash
+kubectl get pods -n kube-system -l k8s-app=metrics-server
+# Wait for pod status to be Running
+```
+
+Check for registered metrics API:
+```bash
+kubectl get apiservices | grep metrics.k8s.io
+```
+Expected output should show `True` under the AVAILABLE column:  
+`v1beta1.metrics.k8s.io   kube-system/metrics-server   True    <age>`
+
+---
+
+## 🖥️ Step 3: Test with kubectl top and k9s
+
+### Test with kubectl top
+Ensure metrics are being collected:
+```bash
+kubectl top nodes
+kubectl top pods -A
+```
+You should see CPU & memory usage for nodes and pods.
+
+### Test with k9s
+
+```bash
+k9s
+```
+You should see CPU and memory utilization in pod/node views and in pulses view (`:pulses`).
+
+---
+
+## 📝 References
+
+- [Talos Documentation](https://www.talos.dev/)
+- [Metrics Server Documentation](https://github.com/kubernetes-sigs/metrics-server)
