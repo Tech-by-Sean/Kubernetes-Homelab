@@ -1,4 +1,8 @@
+<<<<<<< HEAD:kubernets/apps/metrics-server/read-me.md
 # Deploying Metrics Server on Talos Kubernetes for k9s integration
+=======
+# Deploying Metrics Server on Talos Kubernetes for k9s intergration
+>>>>>>> 279a26d (header update):kubernets/apps/metrics-server/read-me
 
 This guide covers deploying the Kubernetes Metrics Server in a Talos cluster, ensuring secure kubelet certificate handling.
 
