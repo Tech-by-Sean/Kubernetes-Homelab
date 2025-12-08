@@ -78,7 +78,7 @@ spec:
         k8s-app: metrics-server
     spec:
       serviceAccountName: metrics-server
-      hostNetwork: true
+      hostNetwork: true # CRITICAL: Bypass CNI and firewall routing issues
       tolerations:
         # Tolerate taints for masters to allow Metrics Server to run on control plane nodes
         - key: "node-role.kubernetes.io/control-plane"
@@ -92,18 +92,17 @@ spec:
         emptyDir: {}
       containers:
       - name: metrics-server
-        image: registry.k8s.io/metrics-server/metrics-server:v0.6.3 # Use a stable version
+        image: registry.k8s.io/metrics-server/metrics-server:v0.6.3
         imagePullPolicy: IfNotPresent
         args:
           - --cert-dir=/tmp
           - --secure-port=4443
-          - --kubelet-port=10250
-          - --kubelet-client-certificate=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-          - --kubelet-client-key=/var/run/secrets/kubernetes.io/serviceaccount/token # <-- ADD THIS
-          - --kubelet-insecure-tls # CRITICAL: Bypass TLS failure due to unapproved Kubelet certificates
+          # Final Fixes for Talos Cluster (Insecure/Bypass)
+          - --kubelet-port=10250                         # Force connection to Kubelet's insecure port
+          - --kubelet-insecure-tls                       # CRITICAL: Bypass TLS/Certificate failure
           - --kubelet-preferred-address-types=InternalIP # Reliable routing for bare-metal/Talos
           - --kubelet-use-node-status-port
-          - --metric-resolution=15s
+          - --metric-resolution=15s                      # Performance: Faster HPA reaction time
         ports:
         - containerPort: 4443
           name: https
@@ -129,7 +128,7 @@ spec:
   selector:
     k8s-app: metrics-server
   ports:
-  - port: 443
+  - port: 4443          # CORRECTED: Must match the container port when hostNetwork: true is used
     protocol: TCP
     targetPort: https
 ---
