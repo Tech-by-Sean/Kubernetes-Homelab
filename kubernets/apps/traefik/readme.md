@@ -21,7 +21,7 @@ kubectl create namespace traefik
 Deploy the Gateway API Custom Resource Definitions:
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homelab/refs/heads/main/kubernets/apps/traefik/traefik-manifest.yaml
+kubectl apply -f https://raw.githubusercontent.com/Tech-by-Sean/Kubernetes-Homelab/refs/heads/main/kubernets/apps/traefik/gateway-api-crd.yaml
 ```
 
 ### Step 3: Apply Traefik CRDs
