@@ -96,11 +96,12 @@ spec:
         args:
           - --cert-dir=/tmp
           - --secure-port=4443
-          # Optimization and Fixes for Talos Cluster:
-          - --kubelet-insecure-tls                 # CRITICAL: Bypass TLS failure due to unapproved Kubelet certificates
+          - --kubelet-client-certificate=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          - --kubelet-client-key=/var/run/secrets/kubernetes.io/serviceaccount/token # <-- ADD THIS
+          - --kubelet-insecure-tls # CRITICAL: Bypass TLS failure due to unapproved Kubelet certificates
           - --kubelet-preferred-address-types=InternalIP # Reliable routing for bare-metal/Talos
           - --kubelet-use-node-status-port
-          - --metric-resolution=15s                # Performance: Faster HPA reaction time
+          - --metric-resolution=15s
         ports:
         - containerPort: 4443
           name: https
