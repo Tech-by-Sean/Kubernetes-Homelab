@@ -1,5 +1,3 @@
----
-# 1. Cluster Role (Permissions to read all resource metrics)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -22,6 +20,10 @@ rules:
 - apiGroups: [""]
   resources: ["pods", "nodes", "nodes/stats", "namespaces", "configmaps"]
   verbs: ["get", "list", "watch"]
+# CRITICAL FIX: Add nodes/metrics permission
+- apiGroups: [""]
+  resources: ["nodes/metrics"]
+  verbs: ["get"]
 ---
 # 3. Role Binding (Bind permissions to the Service Account)
 apiVersion: rbac.authorization.k8s.io/v1
@@ -52,14 +54,28 @@ subjects:
   name: metrics-server
   namespace: kube-system
 ---
-# 5. Service Account
+# 5. CRITICAL FIX: Add auth-delegator binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: metrics-server:system:auth-delegator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+- kind: ServiceAccount
+  name: metrics-server
+  namespace: kube-system
+---
+# 6. Service Account
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: metrics-server
   namespace: kube-system
 ---
-# 6. Metrics Server Deployment
+# 7. Metrics Server Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -71,6 +87,9 @@ spec:
   selector:
     matchLabels:
       k8s-app: metrics-server
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 0
   template:
     metadata:
       name: metrics-server
@@ -79,6 +98,7 @@ spec:
     spec:
       serviceAccountName: metrics-server
       hostNetwork: true # CRITICAL: Bypass CNI and firewall routing issues
+      priorityClassName: system-cluster-critical
       tolerations:
         # Tolerate taints for masters to allow Metrics Server to run on control plane nodes
         - key: "node-role.kubernetes.io/control-plane"
@@ -92,30 +112,48 @@ spec:
         emptyDir: {}
       containers:
       - name: metrics-server
-        image: registry.k8s.io/metrics-server/metrics-server:v0.6.3
+        image: registry.k8s.io/metrics-server/metrics-server:v0.7.1
         imagePullPolicy: IfNotPresent
         args:
           - --cert-dir=/tmp
           - --secure-port=4443
-          # Final Fixes for Talos Cluster (Insecure/Bypass)
-          - --kubelet-port=10250                         # Force connection to Kubelet's insecure port
-          - --kubelet-insecure-tls                       # CRITICAL: Bypass TLS/Certificate failure
+          # Fixes for Talos Cluster
+          - --kubelet-insecure-tls                       # CRITICAL: Bypass TLS/Certificate verification
           - --kubelet-preferred-address-types=InternalIP # Reliable routing for bare-metal/Talos
-          - --kubelet-use-node-status-port
+          - --kubelet-use-node-status-port               # Use node status port
           - --metric-resolution=15s                      # Performance: Faster HPA reaction time
         ports:
         - containerPort: 4443
           name: https
+          protocol: TCP
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /livez
+            port: https
+            scheme: HTTPS
+          periodSeconds: 10
         readinessProbe:
+          failureThreshold: 3
           httpGet:
             path: /readyz
-            port: 4443
+            port: https
             scheme: HTTPS
+          initialDelaySeconds: 20
+          periodSeconds: 10
+        securityContext:
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
         volumeMounts:
         - name: tmp-dir
           mountPath: /tmp
 ---
-# 7. Metrics Server Service (Internal Cluster IP)
+# 8. Metrics Server Service (Internal Cluster IP)
 apiVersion: v1
 kind: Service
 metadata:
@@ -128,21 +166,24 @@ spec:
   selector:
     k8s-app: metrics-server
   ports:
-  - port: 4443          # CORRECTED: Must match the container port when hostNetwork: true is used
+  - name: https
+    port: 443
     protocol: TCP
     targetPort: https
 ---
-# 8. APIService (Registers metrics.k8s.io with the API server)
+# 9. APIService (Registers metrics.k8s.io with the API server)
 apiVersion: apiregistration.k8s.io/v1
 kind: APIService
 metadata:
   name: v1beta1.metrics.k8s.io
+  labels:
+    k8s-app: metrics-server
 spec:
   service:
     name: metrics-server
     namespace: kube-system
   group: metrics.k8s.io
   version: v1beta1
-  insecureSkipTLSVerify: true # Required unless you manually configure the CA chain
+  insecureSkipTLSVerify: true # Required for Talos self-signed certs
   groupPriorityMinimum: 100
   versionPriority: 100
