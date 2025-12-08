@@ -1,219 +1,146 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  labels:
-    app.kubernetes.io/instance: kubelet-serving-cert-approver
-    app.kubernetes.io/name: kubelet-serving-cert-approver
-    pod-security.kubernetes.io/audit: restricted
-    pod-security.kubernetes.io/enforce: restricted
-    pod-security.kubernetes.io/warn: restricted
-  name: kubelet-serving-cert-approver
 ---
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  labels:
-    app.kubernetes.io/instance: kubelet-serving-cert-approver
-    app.kubernetes.io/name: kubelet-serving-cert-approver
-  name: kubelet-serving-cert-approver
-  namespace: kubelet-serving-cert-approver
----
+# 1. Cluster Role (Permissions to read all resource metrics)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
+  name: system:aggregated-metrics-reader
   labels:
-    app.kubernetes.io/instance: kubelet-serving-cert-approver
-    app.kubernetes.io/name: kubelet-serving-cert-approver
-  name: certificates:kubelet-serving-cert-approver
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
 rules:
-- apiGroups:
-  - certificates.k8s.io
-  resources:
-  - certificatesigningrequests
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - certificates.k8s.io
-  resources:
-  - certificatesigningrequests/approval
-  verbs:
-  - update
-- apiGroups:
-  - authorization.k8s.io
-  resources:
-  - subjectaccessreviews
-  verbs:
-  - create
-- apiGroups:
-  - certificates.k8s.io
-  resourceNames:
-  - kubernetes.io/kubelet-serving
-  resources:
-  - signers
-  verbs:
-  - approve
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list", "watch"]
 ---
+# 2. Cluster Role (Permissions to scrape Kubelet endpoints)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  labels:
-    app.kubernetes.io/instance: kubelet-serving-cert-approver
-    app.kubernetes.io/name: kubelet-serving-cert-approver
-  name: events:kubelet-serving-cert-approver
+  name: system:metrics-server
 rules:
-- apiGroups:
-  - ""
-  resources:
-  - events
-  verbs:
-  - create
-  - patch
+- apiGroups: [""]
+  resources: ["pods", "nodes", "nodes/stats", "namespaces", "configmaps"]
+  verbs: ["get", "list", "watch"]
 ---
+# 3. Role Binding (Bind permissions to the Service Account)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  labels:
-    app.kubernetes.io/instance: kubelet-serving-cert-approver
-    app.kubernetes.io/name: kubelet-serving-cert-approver
-  name: events:kubelet-serving-cert-approver
-  namespace: default
+  name: metrics-server-auth-reader
+  namespace: kube-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: events:kubelet-serving-cert-approver
+  kind: Role
+  name: extension-apiserver-authentication-reader
 subjects:
 - kind: ServiceAccount
-  name: kubelet-serving-cert-approver
-  namespace: kubelet-serving-cert-approver
+  name: metrics-server
+  namespace: kube-system
 ---
+# 4. Cluster Role Binding (Bind cluster-wide permissions)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  labels:
-    app.kubernetes.io/instance: kubelet-serving-cert-approver
-    app.kubernetes.io/name: kubelet-serving-cert-approver
-  name: kubelet-serving-cert-approver
+  name: metrics-server-system-service-account
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: certificates:kubelet-serving-cert-approver
+  name: system:metrics-server
 subjects:
 - kind: ServiceAccount
-  name: kubelet-serving-cert-approver
-  namespace: kubelet-serving-cert-approver
+  name: metrics-server
+  namespace: kube-system
 ---
+# 5. Service Account
 apiVersion: v1
-kind: Service
+kind: ServiceAccount
 metadata:
-  labels:
-    app.kubernetes.io/instance: kubelet-serving-cert-approver
-    app.kubernetes.io/name: kubelet-serving-cert-approver
-  name: kubelet-serving-cert-approver
-  namespace: kubelet-serving-cert-approver
-spec:
-  ports:
-  - name: metrics
-    port: 9090
-    protocol: TCP
-    targetPort: metrics
-  selector:
-    app.kubernetes.io/instance: kubelet-serving-cert-approver
-    app.kubernetes.io/name: kubelet-serving-cert-approver
+  name: metrics-server
+  namespace: kube-system
 ---
+# 6. Metrics Server Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: metrics-server
+  namespace: kube-system
   labels:
-    app.kubernetes.io/instance: kubelet-serving-cert-approver
-    app.kubernetes.io/name: kubelet-serving-cert-approver
-  name: kubelet-serving-cert-approver
-  namespace: kubelet-serving-cert-approver
+    k8s-app: metrics-server
 spec:
-  replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/instance: kubelet-serving-cert-approver
-      app.kubernetes.io/name: kubelet-serving-cert-approver
+      k8s-app: metrics-server
   template:
     metadata:
+      name: metrics-server
       labels:
-        app.kubernetes.io/instance: kubelet-serving-cert-approver
-        app.kubernetes.io/name: kubelet-serving-cert-approver
+        k8s-app: metrics-server
     spec:
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - preference:
-              matchExpressions:
-              - key: node-role.kubernetes.io/master
-                operator: DoesNotExist
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-            weight: 100
+      serviceAccountName: metrics-server
+      tolerations:
+        # Tolerate taints for masters to allow Metrics Server to run on control plane nodes
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"
+        - key: "node-role.kubernetes.io/master"
+          operator: "Exists"
+          effect: "NoSchedule"
+      volumes:
+      - name: tmp-dir
+        emptyDir: {}
       containers:
-      - args:
-        - --cert-dir=/tmp
-        - --secure-port=4443  
-        - --kubelet-insecure-tls
-        - --kubelet-preferred-address-types=InternalIP 
-        - --kubelet-use-node-status-port 
-        - --metric-resolution=15s 
-        - serve
-        env:
-        - name: NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
-        image: ghcr.io/alex1989hu/kubelet-serving-cert-approver:main
-        imagePullPolicy: Always
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: health
-          initialDelaySeconds: 6
-        name: cert-approver
+      - name: metrics-server
+        image: registry.k8s.io/metrics-server/metrics-server:v0.6.3 # Use a stable version
+        imagePullPolicy: IfNotPresent
+        args:
+          - --cert-dir=/tmp
+          - --secure-port=4443
+          # Optimization and Fixes for Talos Cluster:
+          - --kubelet-insecure-tls                 # CRITICAL: Bypass TLS failure due to unapproved Kubelet certificates
+          - --kubelet-preferred-address-types=InternalIP # Reliable routing for bare-metal/Talos
+          - --kubelet-use-node-status-port
+          - --metric-resolution=15s                # Performance: Faster HPA reaction time
         ports:
-        - containerPort: 8080
-          name: health
-        - containerPort: 9090
-          name: metrics
+        - containerPort: 4443
+          name: https
         readinessProbe:
           httpGet:
             path: /readyz
-            port: health
-          initialDelaySeconds: 3
-        resources:
-          limits:
-            cpu: 250m
-            memory: 32Mi
-          requests:
-            cpu: 10m
-            memory: 16Mi
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
-          privileged: false
-          readOnlyRootFilesystem: true
-          runAsNonRoot: true
-      priorityClassName: system-cluster-critical
-      securityContext:
-        fsGroup: 65534
-        runAsGroup: 65534
-        runAsUser: 65534
-        seccompProfile:
-          type: RuntimeDefault
-      serviceAccountName: kubelet-serving-cert-approver
-      tolerations:
-      - effect: NoSchedule
-        key: node.cloudprovider.kubernetes.io/uninitialized
-        operator: Exists
-      - effect: NoSchedule
-        key: node-role.kubernetes.io/master
-        operator: Exists
-      - effect: NoSchedule
-        key: node-role.kubernetes.io/control-plane
-        operator: Exists
+            port: 4443
+            scheme: HTTPS
+        volumeMounts:
+        - name: tmp-dir
+          mountPath: /tmp
+---
+# 7. Metrics Server Service (Internal Cluster IP)
+apiVersion: v1
+kind: Service
+metadata:
+  name: metrics-server
+  namespace: kube-system
+  labels:
+    kubernetes.io/name: "Metrics-server"
+    kubernetes.io/cluster-service: "true"
+spec:
+  selector:
+    k8s-app: metrics-server
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: https
+---
+# 8. APIService (Registers metrics.k8s.io with the API server)
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1beta1.metrics.k8s.io
+spec:
+  service:
+    name: metrics-server
+    namespace: kube-system
+  group: metrics.k8s.io
+  version: v1beta1
+  insecureSkipTLSVerify: true # Required unless you manually configure the CA chain
+  groupPriorityMinimum: 100
+  versionPriority: 100
