@@ -96,6 +96,7 @@ spec:
         args:
           - --cert-dir=/tmp
           - --secure-port=4443
+          - --kubelet-port=10250
           - --kubelet-client-certificate=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
           - --kubelet-client-key=/var/run/secrets/kubernetes.io/serviceaccount/token # <-- ADD THIS
           - --kubelet-insecure-tls # CRITICAL: Bypass TLS failure due to unapproved Kubelet certificates
