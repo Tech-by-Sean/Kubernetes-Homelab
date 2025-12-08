@@ -1,4 +1,4 @@
-# Deploying Metrics Server on Talos Kubernetes
+# Deploying Metrics Server on Talos Kubernetes for k9s integration
 
 This guide covers deploying the Kubernetes Metrics Server in a Talos cluster, ensuring secure kubelet certificate handling.
 
