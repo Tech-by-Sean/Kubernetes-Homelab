@@ -6,6 +6,7 @@
 
 This guide covers deploying the Kubernetes Metrics Server in a Talos cluster, ensuring secure kubelet certificate handling.
 
+Note: The manifest intentionally puts the metrics server in the kube-system namespace as a standard. This follows official documentation standards.
 ---
 
 ## Table of Contents
