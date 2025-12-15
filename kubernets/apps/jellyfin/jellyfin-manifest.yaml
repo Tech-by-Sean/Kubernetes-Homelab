@@ -29,6 +29,10 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
+            - name: movies
+              mountPath: /media/movies
+            - name: shows
+              mountPath: /media/shows
           resources:
             limits:
               memory: "4Gi"
@@ -40,6 +44,12 @@ spec:
         - name: config
           persistentVolumeClaim:
             claimName: jellyfin-config
+        - name: movies
+          persistentVolumeClaim:
+            claimName: jellyfin-movies
+        - name: shows
+          persistentVolumeClaim:
+            claimName: jellyfin-shows
 ---
 apiVersion: v1
 kind: Service
