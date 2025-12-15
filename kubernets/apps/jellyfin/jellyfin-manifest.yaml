@@ -81,7 +81,7 @@ spec:
   ports:
     - port: 8096
       targetPort: 8096
-  type: LoadBalancer
+  type: ClusterIP
 
 ---
 apiVersion: networking.k8s.io/v1
