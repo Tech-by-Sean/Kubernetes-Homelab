@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jellyfin-shows-pv
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: 10.10.5.40
+    path: /mnt/master-storage/media-managment/jellyfin/media/shows
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-shows
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: jellyfin-shows-pv
+  resources:
+    requests:
+      storage: 1Ti
