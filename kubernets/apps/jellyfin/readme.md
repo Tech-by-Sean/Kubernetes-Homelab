@@ -275,11 +275,10 @@ Check DNS record points to Traefik's IP (not Jellyfin's service IP).
 
 ## Adding Media Libraries Later
 
-Create NFS shares for movies and shows datasets, then add PVs:
+Create NFS shares for movies and shows datasets in TrueNAS, then create separate storage files:
 
 ```yaml
-# Add to manifest
----
+# apps/jellyfin/jellyfin-movies-storage.yaml
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -308,7 +307,10 @@ spec:
   resources:
     requests:
       storage: 1Ti
----
+```
+
+```yaml
+# apps/jellyfin/jellyfin-shows-storage.yaml
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -339,7 +341,13 @@ spec:
       storage: 1Ti
 ```
 
-Add volume mounts to deployment:
+Apply:
+```bash
+kubectl apply -f apps/jellyfin/jellyfin-movies-storage.yaml
+kubectl apply -f apps/jellyfin/jellyfin-shows-storage.yaml
+```
+
+Then update `jellyfin-manifest.yaml` deployment with volume mounts:
 ```yaml
 volumeMounts:
   - name: config
@@ -358,4 +366,15 @@ volumes:
   - name: shows
     persistentVolumeClaim:
       claimName: jellyfin-shows
+```
+
+Final folder structure:
+```
+apps/
+└── jellyfin/
+    ├── README.md
+    ├── jellyfin-storage.yaml
+    ├── jellyfin-movies-storage.yaml
+    ├── jellyfin-shows-storage.yaml
+    └── jellyfin-manifest.yaml
 ```
