@@ -153,6 +153,10 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
+            - name: movies
+              mountPath: /media/movies
+            - name: shows
+              mountPath: /media/shows
           resources:
             limits:
               memory: "4Gi"
@@ -164,6 +168,12 @@ spec:
         - name: config
           persistentVolumeClaim:
             claimName: jellyfin-config
+        - name: movies
+          persistentVolumeClaim:
+            claimName: jellyfin-movies
+        - name: shows
+          persistentVolumeClaim:
+            claimName: jellyfin-shows
 ---
 apiVersion: v1
 kind: Service
@@ -196,6 +206,8 @@ spec:
 
 ```bash
 kubectl apply -f apps/jellyfin/jellyfin-storage.yaml
+kubectl apply -f apps/jellyfin/jellyfin-movies-storage.yaml
+kubectl apply -f apps/jellyfin/jellyfin-shows-storage.yaml
 kubectl apply -f apps/jellyfin/jellyfin-manifest.yaml
 ```
 
@@ -345,27 +357,6 @@ Apply:
 ```bash
 kubectl apply -f apps/jellyfin/jellyfin-movies-storage.yaml
 kubectl apply -f apps/jellyfin/jellyfin-shows-storage.yaml
-```
-
-Then update `jellyfin-manifest.yaml` deployment with volume mounts:
-```yaml
-volumeMounts:
-  - name: config
-    mountPath: /config
-  - name: movies
-    mountPath: /media/movies
-  - name: shows
-    mountPath: /media/shows
-volumes:
-  - name: config
-    persistentVolumeClaim:
-      claimName: jellyfin-config
-  - name: movies
-    persistentVolumeClaim:
-      claimName: jellyfin-movies
-  - name: shows
-    persistentVolumeClaim:
-      claimName: jellyfin-shows
 ```
 
 Final folder structure:
