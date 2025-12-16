@@ -9,6 +9,12 @@ spec:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
+  # CRITICAL: Fixes the QtLockedFile::lock() issue on NFS
+  mountOptions:
+    - nfsvers=4.1
+    - nolock
+    - hard
+    - noatime
   nfs:
     server: 10.10.5.40
     path: /mnt/master-storage/media-managment/qbittorrent/config

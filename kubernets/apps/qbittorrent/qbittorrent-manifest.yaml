@@ -32,19 +32,24 @@ spec:
                   name: mullvad-vpn
                   key: private-key
             - name: WIREGUARD_ADDRESSES
-              value: "10.71.166.245/32,fc00:bbbb:bbbb:bb01::8:a6f4/128"  # Replace with your Mullvad address
+              value: "10.71.166.245/32,fc00:bbbb:bbbb:bb01::8:a6f4/128"
             - name: SERVER_COUNTRIES
               value: "Canada"
             - name: FIREWALL_INPUT_PORTS
               value: "8080"
+            # Allows Gluetun to see your local NAS and Cluster IPs
             - name: FIREWALL_OUTBOUND_SUBNETS
-              value: "10.10.5.0/24"  # Allows access to local network/NFS
+              value: "10.10.5.0/24,10.0.0.0/8" 
+            # Allows Traefik/Service traffic to reach the pod
+            - name: NETWORK
+              value: "10.10.5.0/24,10.0.0.0/8"
           ports:
             - containerPort: 8080
               name: webui
           volumeMounts:
             - name: gluetun-data
               mountPath: /gluetun
+
         - name: qbittorrent
           image: linuxserver/qbittorrent:latest
           env:
@@ -56,6 +61,15 @@ spec:
               value: "America/New_York"
             - name: WEBUI_PORT
               value: "8080"
+            # FIXES THE 404 NOT FOUND:
+            - name: QBITTORRENT__WebUI__CSRFProtection
+              value: "false"
+            - name: QBITTORRENT__WebUI__HostHeaderValidation
+              value: "false"
+            - name: QBITTORRENT__WebUI__LocalHostAuthentication
+              value: "false"
+            - name: QBITTORRENT__WebUI__TrustedProxies
+              value: "10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16"
           volumeMounts:
             - name: config
               mountPath: /config
