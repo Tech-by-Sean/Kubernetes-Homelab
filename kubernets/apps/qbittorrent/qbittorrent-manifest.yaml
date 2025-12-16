@@ -1,0 +1,86 @@
+# apps/qbittorrent/qbittorrent-manifest.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qbittorrent
+  namespace: media
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qbittorrent
+  template:
+    metadata:
+      labels:
+        app: qbittorrent
+    spec:
+      dnsPolicy: "None"
+      dnsConfig:
+        nameservers:
+          - "10.10.5.2"  # Your DNS server
+      containers:
+        - name: qbittorrent
+          image: linuxserver/qbittorrent:latest
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/New_York"
+            - name: WEBUI_PORT
+              value: "8080"
+            - name: HTTP_PROXY
+              value: "http://gluetun:8888"
+            - name: HTTPS_PROXY
+              value: "http://gluetun:8888"
+          ports:
+            - containerPort: 8080
+              name: webui
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: downloads
+              mountPath: /downloads
+          resources:
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: qbittorrent-config
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: qbittorrent-downloads
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qbittorrent
+  namespace: media
+spec:
+  selector:
+    app: qbittorrent
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: qbittorrent
+  namespace: media
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`qbit.servers.local`)
+      kind: Rule
+      services:
+        - name: qbittorrent
+          port: 8080
