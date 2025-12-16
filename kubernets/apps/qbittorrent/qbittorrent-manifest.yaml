@@ -14,11 +14,37 @@ spec:
       labels:
         app: qbittorrent
     spec:
-      dnsPolicy: "None"
-      dnsConfig:
-        nameservers:
-          - "10.10.5.2"  # Your DNS server
       containers:
+        - name: gluetun
+          image: qmcgaw/gluetun:latest
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+          env:
+            - name: VPN_SERVICE_PROVIDER
+              value: "mullvad"
+            - name: VPN_TYPE
+              value: "wireguard"
+            - name: WIREGUARD_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mullvad-vpn
+                  key: private-key
+            - name: WIREGUARD_ADDRESSES
+              value: "10.66.212.225/32"  # Replace with your Mullvad address
+            - name: SERVER_COUNTRIES
+              value: "USA"
+            - name: FIREWALL_INPUT_PORTS
+              value: "8080"
+            - name: FIREWALL_OUTBOUND_SUBNETS
+              value: "10.0.0.0/8"  # Allows access to local network/NFS
+          ports:
+            - containerPort: 8080
+              name: webui
+          volumeMounts:
+            - name: gluetun-data
+              mountPath: /gluetun
         - name: qbittorrent
           image: linuxserver/qbittorrent:latest
           env:
@@ -30,13 +56,6 @@ spec:
               value: "America/New_York"
             - name: WEBUI_PORT
               value: "8080"
-            - name: HTTP_PROXY
-              value: "http://gluetun:8888"
-            - name: HTTPS_PROXY
-              value: "http://gluetun:8888"
-          ports:
-            - containerPort: 8080
-              name: webui
           volumeMounts:
             - name: config
               mountPath: /config
@@ -56,6 +75,8 @@ spec:
         - name: downloads
           persistentVolumeClaim:
             claimName: qbittorrent-downloads
+        - name: gluetun-data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
