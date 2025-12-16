@@ -11,7 +11,7 @@ spec:
   storageClassName: ""
   nfs:
     server: 10.10.5.40
-    path: /mnt/master-storage/media-managment/jellyfin/media/movies
+    path: /mnt/master-storage/media-managment/media/movies
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
