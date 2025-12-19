@@ -25,6 +25,13 @@ spec:
           image: linuxserver/jellyfin:latest
           securityContext:
             privileged: true
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/New_York"
           ports:
             - containerPort: 8096
               name: http
