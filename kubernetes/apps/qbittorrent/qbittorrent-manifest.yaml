@@ -21,40 +21,29 @@ spec:
               add:
                 - NET_ADMIN
           env:
-            # AirVPN Configuration
             - name: VPN_SERVICE_PROVIDER
-              value: "airvpn"
+              value: "mullvad"
             - name: VPN_TYPE
-              value: "openvpn"
+              value: "wireguard"
+            - name: WIREGUARD_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mullvad-vpn
+                  key: private-key
+            - name: WIREGUARD_ADDRESSES
+              value: "10.66.212.225/32"
             - name: SERVER_COUNTRIES
               value: "Canada"
             - name: SERVER_CITIES
-              value: "Toronto Ontario"
-            # AirVPN Credentials
-            - name: OPENVPN_USER
-              valueFrom:
-                secretKeyRef:
-                  name: airvpn-credentials
-                  key: username
-            - name: OPENVPN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: airvpn-credentials
-                  key: password
-            # Port Forwarding
-            - name: VPN_PORT_FORWARDING
-              value: "on"
-            - name: VPN_PORT_FORWARDING_PROVIDER
-              value: "protonvpn"
-            # Firewall
+              value: "Toronto"
             - name: FIREWALL_INPUT_PORTS
               value: "8080"
             - name: FIREWALL_OUTBOUND_SUBNETS
               value: "10.0.0.0/8"
-            # DNS
             - name: DNS_KEEP_NAMESERVER
               value: "on"
-            # Health check
+            - name: WIREGUARD_MTU
+              value: "1280"
             - name: HEALTH_TARGET_ADDRESSES
               value: "1.1.1.1:443,8.8.8.8:443"
           ports:
@@ -95,3 +84,31 @@ spec:
             claimName: qbittorrent-downloads
         - name: gluetun-data
           emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qbittorrent
+  namespace: media
+spec:
+  selector:
+    app: qbittorrent
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: qbittorrent
+  namespace: media
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`qbit.servers.local`)
+      kind: Rule
+      services:
+        - name: qbittorrent
+          port: 8080
