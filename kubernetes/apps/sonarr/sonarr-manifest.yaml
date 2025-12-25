@@ -13,23 +13,16 @@ spec:
       labels:
         app: sonarr
     spec:
-      # Init container downloads unrar and extracts it to a shared volume
-      initContainers:
-        - name: setup-unrar
-          image: alpine:3.22
-          command:
-            - sh
-            - -c
-            - |
-              apk add --no-cache unrar
-              cp /usr/bin/unrar /shared/unrar
-              chmod +x /shared/unrar
-          volumeMounts:
-            - name: shared-bin
-              mountPath: /shared
       containers:
         - name: sonarr
           image: linuxserver/sonarr:latest
+          # Override the default command to install unrar first
+          command:
+            - /bin/sh
+            - -c
+            - |
+              apk add --no-cache unrar || true
+              exec /init
           env:
             - name: PUID
               value: "1000"
@@ -37,9 +30,6 @@ spec:
               value: "1000"
             - name: TZ
               value: "America/New_York"
-            # Add shared bin directory to PATH
-            - name: PATH
-              value: "/shared:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
           ports:
             - containerPort: 8989
               name: http
@@ -50,8 +40,6 @@ spec:
               mountPath: /shows
             - name: downloads
               mountPath: /downloads
-            - name: shared-bin
-              mountPath: /shared
           resources:
             limits:
               memory: "1Gi"
@@ -69,8 +57,6 @@ spec:
         - name: downloads
           persistentVolumeClaim:
             claimName: qbittorrent-downloads
-        - name: shared-bin
-          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
