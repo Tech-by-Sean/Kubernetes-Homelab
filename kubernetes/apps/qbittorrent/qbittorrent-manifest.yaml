@@ -31,9 +31,23 @@ spec:
                   name: mullvad-vpn
                   key: private-key
             - name: WIREGUARD_ADDRESSES
-              value: "10.66.212.225/32"  # Replace with your Mullvad address
+              value: "10.66.212.225/32"
+            # CHANGED: VPN to Canada
             - name: SERVER_COUNTRIES
-              value: "USA"
+              value: "Canada"
+            # ADDED: Specific city for stability (optional - remove if you want random)
+            - name: SERVER_CITIES
+              value: "Toronto"  # or "Montreal" or "Vancouver"
+            # ADDED: Fix DNS timeout issues
+            - name: DOT
+              value: "off"
+            - name: DNS_PLAINTEXT_ADDRESS
+              value: "1.1.1.1"
+            # ADDED: Relax health checks to prevent constant restarts
+            - name: HEALTH_VPN_DURATION_INITIAL
+              value: "30s"
+            - name: HEALTH_VPN_DURATION_ADDITION
+              value: "10s"
             - name: FIREWALL_INPUT_PORTS
               value: "8080"
             - name: FIREWALL_OUTBOUND_SUBNETS
