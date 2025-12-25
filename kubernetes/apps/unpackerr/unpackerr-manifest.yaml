@@ -39,9 +39,6 @@ spec:
               value: "10s"
             - name: UN_SONARR_0_DELETE_DELAY
               value: "5m"
-            # Radarr configuration (if you add it later)
-            # - name: UN_RADARR_0_URL
-            #   value: "http://radarr:7878"
             # General settings
             - name: UN_DEBUG
               value: "false"
@@ -79,12 +76,3 @@ spec:
         - name: downloads
           persistentVolumeClaim:
             claimName: qbittorrent-downloads
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: sonarr-api-key
-  namespace: media
-type: Opaque
-stringData:
-  api-key: "YOUR_SONARR_API_KEY_HERE"
