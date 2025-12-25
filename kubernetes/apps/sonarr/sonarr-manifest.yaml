@@ -40,6 +40,15 @@ spec:
             requests:
               memory: "256Mi"
               cpu: "100m"
+          # Add this lifecycle hook to install unrar on startup
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/bash
+                  - -c
+                  - |
+                    apt-get update && apt-get install -y unrar
       volumes:
         - name: config
           persistentVolumeClaim:
