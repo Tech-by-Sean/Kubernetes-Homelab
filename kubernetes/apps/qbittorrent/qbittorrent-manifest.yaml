@@ -29,7 +29,7 @@ spec:
             - name: SERVER_COUNTRIES
               value: "Canada"
             - name: SERVER_CITIES
-              value: "Toronto"
+              value: "Toronto Ontario"
             # AirVPN Credentials
             - name: OPENVPN_USER
               valueFrom:
@@ -41,11 +41,11 @@ spec:
                 secretKeyRef:
                   name: airvpn-credentials
                   key: password
-            # Port Forwarding (AirVPN supports it!)
+            # Port Forwarding
             - name: VPN_PORT_FORWARDING
               value: "on"
             - name: VPN_PORT_FORWARDING_PROVIDER
-              value: "protonvpn"  # Gluetun uses protonvpn method for AirVPN
+              value: "protonvpn"
             # Firewall
             - name: FIREWALL_INPUT_PORTS
               value: "8080"
@@ -55,7 +55,7 @@ spec:
             - name: DNS_KEEP_NAMESERVER
               value: "on"
             # Health check
-            - name: HEALTH_TARGET_ADDRESS
+            - name: HEALTH_TARGET_ADDRESSES
               value: "1.1.1.1:443,8.8.8.8:443"
           ports:
             - containerPort: 8080
