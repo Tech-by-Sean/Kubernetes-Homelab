@@ -40,14 +40,14 @@ spec:
               value: "8080"
             - name: FIREWALL_OUTBOUND_SUBNETS
               value: "10.0.0.0/8"
-            # DNS settings (using new variable names)
+            # DNS settings
             - name: DNS_SERVER
               value: "off"
             - name: DNS_ADDRESS
               value: "1.1.1.1"
-            # PROPER way to disable healthcheck
-            - name: HEALTH_VPN_DURATION_INITIAL
-              value: "0"
+            # CORRECT way to disable healthcheck (new variable)
+            - name: HEALTH_VPN_DURATION
+              value: "0s"
           ports:
             - containerPort: 8080
               name: webui
