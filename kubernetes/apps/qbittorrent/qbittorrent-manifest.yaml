@@ -40,14 +40,15 @@ spec:
               value: "8080"
             - name: FIREWALL_OUTBOUND_SUBNETS
               value: "10.0.0.0/8"
-            # DNS settings
-            - name: DNS_SERVER
-              value: "off"
-            - name: DNS_ADDRESS
-              value: "1.1.1.1"
-            # CORRECT way to extend healthcheck wait time (effectively disabling auto-restart)
-            - name: HEALTH_SUCCESS_WAIT_DURATION
-              value: "999h"
+            # Keep Kubernetes DNS (this is KEY)
+            - name: DNS_KEEP_NAMESERVER
+              value: "on"
+            # Lower MTU for better compatibility
+            - name: WIREGUARD_MTU
+              value: "1280"
+            # THE FIX: Use IP-based healthchecks instead of DNS
+            - name: HEALTH_TARGET_ADDRESS
+              value: "1.1.1.1:443,8.8.8.8:443"
           ports:
             - containerPort: 8080
               name: webui
