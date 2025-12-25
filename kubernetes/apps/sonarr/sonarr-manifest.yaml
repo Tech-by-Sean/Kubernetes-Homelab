@@ -13,6 +13,20 @@ spec:
       labels:
         app: sonarr
     spec:
+      # Init container runs BEFORE sonarr starts
+      initContainers:
+        - name: install-unrar
+          image: linuxserver/sonarr:latest
+          command:
+            - /bin/bash
+            - -c
+            - |
+              # Install unrar to a shared volume
+              apt-get update && apt-get download unrar
+              dpkg -x unrar*.deb /unrar-bin
+          volumeMounts:
+            - name: unrar-bin
+              mountPath: /unrar-bin
       containers:
         - name: sonarr
           image: linuxserver/sonarr:latest
@@ -23,6 +37,8 @@ spec:
               value: "1000"
             - name: TZ
               value: "America/New_York"
+            - name: PATH
+              value: "/unrar-bin/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
           ports:
             - containerPort: 8989
               name: http
@@ -33,6 +49,8 @@ spec:
               mountPath: /shows
             - name: downloads
               mountPath: /downloads
+            - name: unrar-bin
+              mountPath: /unrar-bin
           resources:
             limits:
               memory: "1Gi"
@@ -40,15 +58,6 @@ spec:
             requests:
               memory: "256Mi"
               cpu: "100m"
-          # Add this lifecycle hook to install unrar on startup
-          lifecycle:
-            postStart:
-              exec:
-                command:
-                  - /bin/bash
-                  - -c
-                  - |
-                    apt-get update && apt-get install -y unrar
       volumes:
         - name: config
           persistentVolumeClaim:
@@ -59,6 +68,8 @@ spec:
         - name: downloads
           persistentVolumeClaim:
             claimName: qbittorrent-downloads
+        - name: unrar-bin
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
