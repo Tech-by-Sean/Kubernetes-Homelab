@@ -21,15 +21,17 @@ spec:
               add:
                 - NET_ADMIN
           env:
-            # AirVPN Custom WireGuard Configuration
+            # AirVPN Provider (not custom!)
             - name: VPN_SERVICE_PROVIDER
-              value: "custom"
+              value: "airvpn"
             - name: VPN_TYPE
               value: "wireguard"
-            - name: VPN_ENDPOINT_IP
-              value: "184.75.208.244"
-            - name: VPN_ENDPOINT_PORT
-              value: "1637"
+            # Location
+            - name: SERVER_COUNTRIES
+              value: "Canada"
+            - name: SERVER_CITIES
+              value: "Toronto"
+            # WireGuard Keys
             - name: WIREGUARD_PRIVATE_KEY
               valueFrom:
                 secretKeyRef:
@@ -47,9 +49,12 @@ spec:
                   key: public-key
             - name: WIREGUARD_ADDRESSES
               value: "10.147.203.222/32"
+            # Port Forwarding (AirVPN supports this!)
+            - name: FIREWALL_VPN_INPUT_PORTS
+              value: "54555"
             # Firewall
             - name: FIREWALL_INPUT_PORTS
-              value: "8080,54555"
+              value: "8080"
             - name: FIREWALL_OUTBOUND_SUBNETS
               value: "10.0.0.0/8"
             # DNS
