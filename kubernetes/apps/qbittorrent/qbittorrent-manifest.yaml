@@ -21,29 +21,46 @@ spec:
               add:
                 - NET_ADMIN
           env:
+            # AirVPN Custom WireGuard Configuration
             - name: VPN_SERVICE_PROVIDER
-              value: "mullvad"
+              value: "custom"
             - name: VPN_TYPE
               value: "wireguard"
+            - name: VPN_ENDPOINT_IP
+              value: "184.75.208.244"
+            - name: VPN_ENDPOINT_PORT
+              value: "1637"
             - name: WIREGUARD_PRIVATE_KEY
               valueFrom:
                 secretKeyRef:
-                  name: mullvad-vpn
+                  name: airvpn-wireguard
                   key: private-key
+            - name: WIREGUARD_PRESHARED_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: airvpn-wireguard
+                  key: preshared-key
+            - name: WIREGUARD_PUBLIC_KEY
+              value: "PyLCXAQT8KkM4T+dUsOQfn+Ub3pGxfGlxkIApuig+hk="
             - name: WIREGUARD_ADDRESSES
-              value: "10.68.165.39/32"
-            - name: SERVER_COUNTRIES
-              value: "Canada"
-            - name: SERVER_CITIES
-              value: "Toronto"
+              value: "10.147.203.222/32"
+            # Port Forwarding
+            - name: VPN_PORT_FORWARDING
+              value: "on"
+            - name: VPN_PORT_FORWARDING_PROVIDER
+              value: "protonvpn"
+            # Firewall
             - name: FIREWALL_INPUT_PORTS
               value: "8080"
             - name: FIREWALL_OUTBOUND_SUBNETS
               value: "10.0.0.0/8"
+            # DNS
             - name: DNS_KEEP_NAMESERVER
               value: "on"
+            # WireGuard MTU
             - name: WIREGUARD_MTU
-              value: "1280"
+              value: "1320"
+            # Health check
             - name: HEALTH_TARGET_ADDRESSES
               value: "1.1.1.1:443,8.8.8.8:443"
           ports:
