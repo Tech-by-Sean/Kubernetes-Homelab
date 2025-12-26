@@ -41,12 +41,15 @@ spec:
                   name: airvpn-wireguard
                   key: preshared-key
             - name: WIREGUARD_PUBLIC_KEY
-              value: "PyLCXAQT8KkM4T+dUsOQfn+Ub3pGxfGlxkIApuig+hk="
+              valueFrom:
+                secretKeyRef:
+                  name: airvpn-wireguard
+                  key: public-key
             - name: WIREGUARD_ADDRESSES
               value: "10.147.203.222/32"
             # Firewall
             - name: FIREWALL_INPUT_PORTS
-              value: "8080"
+              value: "8080,54555"
             - name: FIREWALL_OUTBOUND_SUBNETS
               value: "10.0.0.0/8"
             # DNS
