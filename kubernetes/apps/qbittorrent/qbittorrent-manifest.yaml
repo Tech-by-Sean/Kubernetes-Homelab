@@ -21,7 +21,7 @@ spec:
               add:
                 - NET_ADMIN
           env:
-            # AirVPN Provider (not custom!)
+            # AirVPN Provider
             - name: VPN_SERVICE_PROVIDER
               value: "airvpn"
             - name: VPN_TYPE
@@ -30,7 +30,7 @@ spec:
             - name: SERVER_COUNTRIES
               value: "Canada"
             - name: SERVER_CITIES
-              value: "Toronto"
+              value: "Toronto Ontario"
             # WireGuard Keys
             - name: WIREGUARD_PRIVATE_KEY
               valueFrom:
@@ -49,7 +49,7 @@ spec:
                   key: public-key
             - name: WIREGUARD_ADDRESSES
               value: "10.147.203.222/32"
-            # Port Forwarding (AirVPN supports this!)
+            # Port Forwarding
             - name: FIREWALL_VPN_INPUT_PORTS
               value: "54555"
             # Firewall
