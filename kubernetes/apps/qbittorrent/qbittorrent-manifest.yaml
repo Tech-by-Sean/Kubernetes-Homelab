@@ -44,11 +44,6 @@ spec:
               value: "PyLCXAQT8KkM4T+dUsOQfn+Ub3pGxfGlxkIApuig+hk="
             - name: WIREGUARD_ADDRESSES
               value: "10.147.203.222/32"
-            # Port Forwarding
-            - name: VPN_PORT_FORWARDING
-              value: "on"
-            - name: VPN_PORT_FORWARDING_PROVIDER
-              value: "protonvpn"
             # Firewall
             - name: FIREWALL_INPUT_PORTS
               value: "8080"
