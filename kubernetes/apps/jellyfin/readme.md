@@ -52,9 +52,9 @@ Jellyfin Service (ClusterIP)
 Jellyfin Pod
     ↓
 TrueNAS NFS Shares (10.10.5.40)
-├── Config:  /mnt/gluttonterra/k8s/jellyfin/config
-├── Movies:  /mnt/gluttonterra/k8s/jellyfin/media/movies
-└── Shows:   /mnt/gluttonterra/k8s/jellyfin/media/shows
+├── Config:  /mnt/master-storage/media-managment/jellyfin/config
+├── Movies:  /mnt/master-storage/media-managment/jellyfin/media/movies
+└── Shows:   /mnt/master-storage/media-managment/jellyfin/media/shows
 ```
 
 ---
@@ -73,7 +73,7 @@ Before deploying Jellyfin, ensure you have:
 **Storage:**
 - [ ] TrueNAS server accessible at 10.10.5.40
 - [ ] NFS service enabled on TrueNAS
-- [ ] Datasets created for Jellyfin
+- [ ] Datasets created under `master-storage/media-managment/jellyfin`
 
 **Network:**
 - [ ] DNS server accessible (Technitium at 10.10.5.2, 10.10.5.3)
@@ -99,65 +99,83 @@ kubernetes/apps/jellyfin/
 
 Create datasets for Jellyfin storage on TrueNAS.
 
-#### 1.1 Create Datasets
+#### 1.1 Verify Dataset Structure
 
-Navigate to TrueNAS UI → **Storage** → **Datasets**
+Your TrueNAS should have the following dataset structure:
+```
+master-storage/
+└── media-managment/
+    └── jellyfin/
+        ├── config           # Jellyfin configuration and metadata
+        └── media/
+            ├── downloads    # Downloads directory (for qBittorrent)
+            ├── movies       # Movie library
+            └── shows        # TV show library
+```
 
-Create the following datasets under `gluttonterra/k8s/jellyfin`:
-```
-gluttonterra/k8s/jellyfin
-├── config           # Jellyfin configuration and metadata
-└── media
-    ├── movies       # Movie library
-    └── shows        # TV show library
-```
+Based on your screenshot, these datasets already exist. If you need to create additional datasets:
 
 **Via TrueNAS UI:**
-1. Click **Add Dataset**
-2. Parent: `gluttonterra/k8s/jellyfin`
-3. Name: `config`
-4. Click **Submit**
-5. Repeat for `media`, `media/movies`, `media/shows`
+1. Navigate to **Storage** → **Datasets**
+2. Click **Add Dataset**
+3. Parent: `master-storage/media-managment/jellyfin/media`
+4. Name: (e.g., `anime`, `music`, etc.)
+5. Click **Submit**
 
 #### 1.2 Set Dataset Permissions
 
 For each dataset (`config`, `media/movies`, `media/shows`):
 
-1. Click dataset → **Edit Permissions**
-2. Set:
+1. Navigate to **Storage** → **Datasets**
+2. Click the dataset → **Edit Permissions**
+3. Set:
    - **Owner:** `root`
    - **Group:** `root`
-   - **Mode:** `0777` (or Owner/Group: `rwx`, Other: `r-x`)
+   - **Access Mode:** Click **Use ACL Manager** or set Unix Permissions:
+     - Owner: `Read`, `Write`, `Execute`
+     - Group: `Read`, `Write`, `Execute`
+     - Other: `Read`, `Execute`
    - ✅ **Apply permissions recursively**
-3. Click **Save**
+4. Click **Save**
 
-> **Why 0777?** Kubernetes pods run with varying UIDs/GIDs. Using 0777 ensures broad compatibility. For production, consider specific UID/GID mappings.
+> **Note:** For simpler permission management, you can use `0777` (full permissions for all), but this is less secure. For production, consider specific UID/GID mappings.
 
-#### 1.3 Create NFS Shares
+#### 1.3 Create/Verify NFS Shares
 
-Navigate to **Shares** → **NFS**
+Navigate to **Shares** → **NFS** → **Unix Shares (NFS)**
 
-Create shares for each dataset:
+Verify or create NFS shares for each dataset:
 
 **Config Share:**
-- Path: `/mnt/gluttonterra/k8s/jellyfin/config`
-- Maproot User: `root`
-- Maproot Group: `root`
-- Networks: `10.10.5.0/24`
+1. Click **Add** (if doesn't exist)
+2. **Path:** `/mnt/master-storage/media-managment/jellyfin/config`
+3. Click **Submit**
+4. Click the share → **Edit**
+5. **Advanced Options:**
+   - **Maproot User:** `root`
+   - **Maproot Group:** `root`
+   - **Authorized Networks:** `10.10.5.0/24`
+6. Click **Save**
 
 **Movies Share:**
-- Path: `/mnt/gluttonterra/k8s/jellyfin/media/movies`
-- Maproot User: `root`
-- Maproot Group: `root`
-- Networks: `10.10.5.0/24`
+1. **Path:** `/mnt/master-storage/media-managment/jellyfin/media/movies`
+2. **Maproot User:** `root`
+3. **Maproot Group:** `root`
+4. **Authorized Networks:** `10.10.5.0/24`
 
 **Shows Share:**
-- Path: `/mnt/gluttonterra/k8s/jellyfin/media/shows`
-- Maproot User: `root`
-- Maproot Group: `root`
-- Networks: `10.10.5.0/24`
+1. **Path:** `/mnt/master-storage/media-managment/jellyfin/media/shows`
+2. **Maproot User:** `root`
+3. **Maproot Group:** `root`
+4. **Authorized Networks:** `10.10.5.0/24`
 
-Click **Save** and **Enable Service** if prompted.
+**Enable NFS Service:**
+- Navigate to **System Settings** → **Services**
+- Find **NFS** and toggle **Running**
+- Click the **Configure** icon (⚙️) and ensure:
+  - ✅ **Enable NFSv4**
+  - ✅ **NFSv3 ownership model for NFSv4**
+  - Click **Save**
 
 ---
 
@@ -206,17 +224,17 @@ kubectl get pv | grep jellyfin
 ```
 
 > **Files:**
-> - `kubernetes/apps/jellyfin/jellyfin-config-pv-pvc.yaml` - Config storage (50Gi)
-> - `kubernetes/apps/jellyfin/jellyfin-movies-pv-pvc.yaml` - Movies storage (2Ti)
-> - `kubernetes/apps/jellyfin/jellyfin-shows-pv-pvc.yaml` - Shows storage (2Ti)
+> - `kubernetes/apps/jellyfin/jellyfin-config-pv-pvc.yaml` - Config storage (50Gi, RWO)
+> - `kubernetes/apps/jellyfin/jellyfin-movies-pv-pvc.yaml` - Movies storage (2Ti, RWX)
+> - `kubernetes/apps/jellyfin/jellyfin-shows-pv-pvc.yaml` - Shows storage (2Ti, RWX)
 
 **Storage Configuration Details:**
 
-| Volume | Size | Access Mode | Purpose |
-|--------|------|-------------|---------|
-| jellyfin-config-pv | 50Gi | ReadWriteOnce | Jellyfin config, metadata, transcoding cache |
-| jellyfin-movies-pv | 2Ti | ReadWriteMany | Movie library (shared with other apps) |
-| jellyfin-shows-pv | 2Ti | ReadWriteMany | TV show library (shared with other apps) |
+| Volume | Size | Access Mode | NFS Path | Purpose |
+|--------|------|-------------|----------|---------|
+| jellyfin-config-pv | 50Gi | ReadWriteOnce | `/mnt/master-storage/media-managment/jellyfin/config` | Jellyfin config, metadata, cache |
+| jellyfin-movies-pv | 2Ti | ReadWriteMany | `/mnt/master-storage/media-managment/jellyfin/media/movies` | Movie library (shared) |
+| jellyfin-shows-pv | 2Ti | ReadWriteMany | `/mnt/master-storage/media-managment/jellyfin/media/shows` | TV show library (shared) |
 
 ---
 
@@ -244,10 +262,10 @@ kubectl get pods -n media
 > **File location:** `kubernetes/apps/jellyfin/jellyfin-manifest.yaml`
 
 **This manifest creates:**
-- Namespace: `media` (with privileged pod security)
-- Deployment: Jellyfin container with resource limits
-- Service: ClusterIP service on port 8096
-- IngressRoute: Traefik routing for `jellyfin.servers.local`
+- **Namespace:** `media` (with privileged pod security)
+- **Deployment:** Jellyfin container with resource limits and health probes
+- **Service:** ClusterIP service on port 8096
+- **IngressRoute:** Traefik routing for `jellyfin.servers.local`
 
 **Verify PVCs are Bound:**
 ```bash
@@ -331,34 +349,71 @@ You should see the Jellyfin setup wizard.
 
 ---
 
-### Step 7: Initial Jellyfin Setup
+### Step 7: Verify NFS Mounts
+
+Verify that the NFS shares are properly mounted inside the Jellyfin pod:
+```bash
+# Check mounts
+kubectl exec -n media -l app=jellyfin -- df -h
+
+# Expected output showing NFS mounts:
+# Filesystem                                                          Size  Used Avail Use% Mounted on
+# 10.10.5.40:/mnt/master-storage/media-managment/jellyfin/config     8.9T  1.6T  7.3T  18% /config
+# 10.10.5.40:/mnt/master-storage/media-managment/jellyfin/media/movies  8.9T  1.6T  7.3T  18% /media/movies
+# 10.10.5.40:/mnt/master-storage/media-managment/jellyfin/media/shows   8.9T  1.6T  7.3T  18% /media/shows
+
+# Check mount details
+kubectl exec -n media -l app=jellyfin -- mount | grep nfs
+
+# List directory contents
+kubectl exec -n media -l app=jellyfin -- ls -la /config
+kubectl exec -n media -l app=jellyfin -- ls -la /media/movies
+kubectl exec -n media -l app=jellyfin -- ls -la /media/shows
+```
+
+---
+
+### Step 8: Initial Jellyfin Setup
 
 **Via Web UI:**
 
 1. Navigate to `http://jellyfin.servers.local`
-2. Select your language
-3. Create admin user account
-4. Configure media libraries:
-   - **Movies:** `/media/movies`
-   - **TV Shows:** `/media/shows`
-5. Configure metadata providers (TMDB, TVDB, etc.)
-6. Complete setup wizard
+2. **Welcome Screen:** Select your preferred language → Click **Next**
+3. **Create Admin User:**
+   - Username: (e.g., `admin`)
+   - Password: (create a strong password)
+   - Click **Next**
+4. **Setup Media Libraries:**
+   - Click **Add Media Library**
+   - **Content type:** Movies
+   - **Display name:** Movies
+   - **Folders:** Click **+** and enter `/media/movies`
+   - Click **OK**
+   - Repeat for TV Shows (`/media/shows`)
+   - Click **Next**
+5. **Preferred Metadata Language:** Select your language → Click **Next**
+6. **Remote Access:** Configure as needed → Click **Next**
+7. **Finish:** Click **Finish**
 
-**Add Media:**
+**Add Media Files:**
 
-Upload media to your TrueNAS shares:
-- Movies: `/mnt/gluttonterra/k8s/jellyfin/media/movies`
-- Shows: `/mnt/gluttonterra/k8s/jellyfin/media/shows`
+Upload or copy media files to your TrueNAS shares:
+- **Movies:** `/mnt/master-storage/media-managment/jellyfin/media/movies/`
+- **TV Shows:** `/mnt/master-storage/media-managment/jellyfin/media/shows/`
 
 Jellyfin will automatically scan and add them to your library.
+
+**Trigger Manual Scan:**
+- Dashboard → Libraries → Click **Scan All Libraries**
 
 ---
 
 ### GitOps Deployment (ArgoCD)
 
 If using ArgoCD, create an Application manifest:
+
+**Create `kubernetes/argocd/applications/jellyfin.yaml`:**
 ```yaml
-# argocd/applications/jellyfin.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -383,13 +438,16 @@ spec:
 
 **Apply via ArgoCD:**
 ```bash
-kubectl apply -f argocd/applications/jellyfin.yaml
+kubectl apply -f kubernetes/argocd/applications/jellyfin.yaml
 
 # Or via ArgoCD UI:
 # - Applications → New App
+# - Application Name: jellyfin
+# - Project: media
 # - Repository: http://forgejo.servers.local:3000/smokrane/Kubernetes-Homelab.git
 # - Path: kubernetes/apps/jellyfin
 # - Destination: media namespace
+# - Sync Policy: Automatic
 ```
 
 ---
@@ -424,19 +482,21 @@ User → DNS → Traefik LoadBalancer → IngressRoute → Service → Pod
 kubectl describe pod -n media -l app=jellyfin
 
 # Common causes:
-# 1. NFS mount issue
-# 2. PVC not bound
-# 3. Permissions issue on TrueNAS
+# 1. NFS mount issue - check TrueNAS NFS service is running
+# 2. PVC not bound - check PV exists and matches PVC
+# 3. Permissions issue - verify dataset permissions
+# 4. Network issue - verify worker nodes can reach 10.10.5.40
 ```
 
 **Check NFS mount:**
 ```bash
 # From inside the pod
-kubectl exec -n media -it <pod-name> -- df -h
+kubectl exec -n media -l app=jellyfin -- df -h | grep nfs
 
 # Should show NFS mounts:
-# 10.10.5.40:/mnt/gluttonterra/k8s/jellyfin/config  on /config
-# 10.10.5.40:/mnt/gluttonterra/k8s/jellyfin/media/movies on /media/movies
+# 10.10.5.40:/mnt/master-storage/media-managment/jellyfin/config on /config
+# 10.10.5.40:/mnt/master-storage/media-managment/jellyfin/media/movies on /media/movies
+# 10.10.5.40:/mnt/master-storage/media-managment/jellyfin/media/shows on /media/shows
 ```
 
 **Pod in CrashLoopBackOff:**
@@ -444,7 +504,7 @@ kubectl exec -n media -it <pod-name> -- df -h
 kubectl logs -n media -l app=jellyfin --tail=50
 
 # Common issues:
-# - Permission denied → Fix TrueNAS dataset permissions (0777, root:root)
+# - Permission denied → Fix TrueNAS dataset permissions
 # - Missing config → First boot should auto-generate
 # - Port already in use → Check for conflicting services
 ```
@@ -479,14 +539,16 @@ nslookup jellyfin.servers.local
 **NFS Permission Denied:**
 ```bash
 # Check TrueNAS dataset permissions
-# Should be: Owner=root, Group=root, Mode=0777
+# Via TrueNAS UI: Storage → Datasets → Click dataset → Edit Permissions
+# Should allow root:root with appropriate read/write/execute
 
 # Check NFS share settings
+# Via TrueNAS UI: Shares → NFS
 # Should allow: 10.10.5.0/24, Maproot=root
 
 # Test NFS mount from a debug pod
 kubectl run -it --rm nfs-test --image=busybox --restart=Never -- \
-  sh -c "mount -t nfs 10.10.5.40:/mnt/gluttonterra/k8s/jellyfin/config /mnt && ls -la /mnt"
+  sh -c "mount -t nfs 10.10.5.40:/mnt/master-storage/media-managment/jellyfin/config /mnt && ls -la /mnt"
 ```
 
 **PVC stuck in Pending:**
@@ -495,22 +557,35 @@ kubectl describe pvc -n media jellyfin-config-pvc
 
 # Check:
 # 1. PV exists: kubectl get pv jellyfin-config-pv
-# 2. volumeName matches in PVC
-# 3. Access modes match
+# 2. volumeName matches in PVC spec
+# 3. Access modes match between PV and PVC
 # 4. Storage class is "" (empty string)
+# 5. NFS server is reachable from worker nodes
 ```
 
 **Jellyfin shows empty library:**
 ```bash
 # Check if media directories are mounted
-kubectl exec -n media deployment/jellyfin -- ls -la /media/movies
-kubectl exec -n media deployment/jellyfin -- ls -la /media/shows
+kubectl exec -n media -l app=jellyfin -- ls -la /media/movies
+kubectl exec -n media -l app=jellyfin -- ls -la /media/shows
+
+# Check if files exist on TrueNAS
+# Via TrueNAS shell or file browser:
+# ls -la /mnt/master-storage/media-managment/jellyfin/media/movies
+# ls -la /mnt/master-storage/media-managment/jellyfin/media/shows
 
 # Trigger library scan in Jellyfin UI
 # Dashboard → Libraries → Scan All Libraries
+```
 
-# Or trigger via API
-kubectl exec -n media deployment/jellyfin -- curl -X POST http://localhost:8096/Library/Refresh
+**Test NFS connectivity from worker node:**
+```bash
+# Find which worker node the pod is on
+kubectl get pod -n media -l app=jellyfin -o wide
+
+# Test NFS mount from that worker node
+# On Talos, use talosctl:
+talosctl -n <worker-node-ip> read /proc/mounts | grep nfs
 ```
 
 ---
@@ -537,10 +612,15 @@ kubectl rollout status deployment/jellyfin -n media
 
 **Backup Configuration:**
 ```bash
-# Jellyfin config is stored on TrueNAS
-# Take a TrueNAS snapshot of the dataset
-# TrueNAS UI → Storage → Snapshots → Add Snapshot
-# Dataset: gluttonterra/k8s/jellyfin/config
+# Jellyfin config is stored on TrueNAS at:
+# /mnt/master-storage/media-managment/jellyfin/config
+
+# Take a TrueNAS snapshot
+# TrueNAS UI → Storage → Datasets → jellyfin/config → Add Snapshot
+# Or create automated snapshot task:
+# Storage → Periodic Snapshot Tasks → Add
+# Dataset: master-storage/media-managment/jellyfin/config
+# Schedule: Daily, Keep 7 snapshots
 ```
 
 **View Logs:**
@@ -605,15 +685,21 @@ resources:
 - Configure library auto-scan in Jellyfin settings
 
 **Shared Storage:**
-- Movies: `/mnt/gluttonterra/k8s/jellyfin/media/movies` (shared with Radarr)
-- Shows: `/mnt/gluttonterra/k8s/jellyfin/media/shows` (shared with Sonarr)
+- Movies: `/mnt/master-storage/media-managment/jellyfin/media/movies` (shared with Radarr)
+- Shows: `/mnt/master-storage/media-managment/jellyfin/media/shows` (shared with Sonarr)
+- Downloads: `/mnt/master-storage/media-managment/jellyfin/media/downloads` (shared with qBittorrent)
+
+**Recommended Setup:**
+1. qBittorrent downloads to `/media/downloads`
+2. Sonarr/Radarr moves completed downloads to `/media/shows` or `/media/movies`
+3. Jellyfin scans and adds to library automatically
 
 ---
 
 ### Related Configuration
 
 - **Namespace:** `media` (shared with Sonarr, Radarr, Prowlarr, qBittorrent)
-- **TrueNAS Datasets:** `gluttonterra/k8s/jellyfin/*`
+- **TrueNAS Dataset:** `master-storage/media-managment/jellyfin`
 - **Traefik Configuration:** `kubernetes/apps/traefik/`
 - **ArgoCD Project:** `media` (if using GitOps)
 - **DNS Records:** Managed in Technitium (10.10.5.2, 10.10.5.3)
@@ -625,11 +711,15 @@ resources:
 Once Jellyfin is running:
 
 1. ✅ Configure media libraries in Jellyfin UI
-2. ⬜ Deploy Sonarr for TV show management
-3. ⬜ Deploy Radarr for movie management
-4. ⬜ Deploy Prowlarr for indexer management
-5. ⬜ Deploy qBittorrent for downloads
-6. ⬜ Configure automation pipeline (Prowlarr → Sonarr/Radarr → qBittorrent → Jellyfin)
+2. ⬜ Deploy qBittorrent for downloads
+3. ⬜ Deploy Prowlarr for indexer management
+4. ⬜ Deploy Sonarr for TV show management
+5. ⬜ Deploy Radarr for movie management
+6. ⬜ Configure automation pipeline:
+```
+   Prowlarr (indexers) → Sonarr/Radarr (management) → 
+   qBittorrent (download) → Jellyfin (streaming)
+```
 
 ---
 
@@ -640,14 +730,14 @@ Once Jellyfin is running:
 URL: http://jellyfin.servers.local
 ```
 
-**Important Files:**
+**Repository Structure:**
 ```
 kubernetes/apps/jellyfin/
-├── readme.md
-├── jellyfin-config-pv-pvc.yaml
-├── jellyfin-movies-pv-pvc.yaml
-├── jellyfin-shows-pv-pvc.yaml
-└── jellyfin-manifest.yaml
+├── readme.md                      # This file
+├── jellyfin-config-pv-pvc.yaml   # Config storage (NFS)
+├── jellyfin-movies-pv-pvc.yaml   # Movies storage (NFS)
+├── jellyfin-shows-pv-pvc.yaml    # Shows storage (NFS)
+└── jellyfin-manifest.yaml        # Deployment, Service, IngressRoute
 ```
 
 **Common Commands:**
@@ -660,6 +750,9 @@ kubectl get ingressroute -n media
 # View logs
 kubectl logs -n media -l app=jellyfin -f
 
+# Check NFS mounts
+kubectl exec -n media -l app=jellyfin -- df -h | grep nfs
+
 # Restart
 kubectl rollout restart deployment/jellyfin -n media
 
@@ -669,9 +762,12 @@ kubectl exec -n media -it deployment/jellyfin -- /bin/bash
 
 **TrueNAS Paths:**
 ```
-Config:  /mnt/gluttonterra/k8s/jellyfin/config
-Movies:  /mnt/gluttonterra/k8s/jellyfin/media/movies
-Shows:   /mnt/gluttonterra/k8s/jellyfin/media/shows
+NFS Server: 10.10.5.40
+
+Config:    /mnt/master-storage/media-managment/jellyfin/config
+Movies:    /mnt/master-storage/media-managment/jellyfin/media/movies
+Shows:     /mnt/master-storage/media-managment/jellyfin/media/shows
+Downloads: /mnt/master-storage/media-managment/jellyfin/media/downloads
 ```
 
 **Network:**
@@ -679,4 +775,12 @@ Shows:   /mnt/gluttonterra/k8s/jellyfin/media/shows
 Traefik LoadBalancer: 10.10.5.230
 TrueNAS NFS Server:   10.10.5.40
 DNS Servers:          10.10.5.2, 10.10.5.3
+Kubernetes API:       https://10.10.5.200:6443
+```
+
+**PV/PVC Mapping:**
+```
+jellyfin-config-pv  → jellyfin-config-pvc  → /config (50Gi, RWO)
+jellyfin-movies-pv  → jellyfin-movies-pvc  → /media/movies (2Ti, RWX)
+jellyfin-shows-pv   → jellyfin-shows-pvc   → /media/shows (2Ti, RWX)
 ```
