@@ -298,7 +298,7 @@ Press `Ctrl-x` or `F10` to boot.
 
 From your management machine:
 ```bash
-# Set the control plane IP (temporary or desired static IP)
+# Set the control plane IP (use the desired static IP or VIP)
 export CONTROL_PLANE_IP=10.10.5.200
 
 # Generate configurations
@@ -306,8 +306,8 @@ talosctl gen config talos-homelab https://$CONTROL_PLANE_IP:6443 --output-dir _o
 ```
 
 This creates:
-- `_out/controlplane.yaml` - Control plane configuration
-- `_out/worker.yaml` - Worker configuration
+- `_out/controlplane.yaml` - **Single** control plane configuration (used for ALL 3 control plane nodes)
+- `_out/worker.yaml` - **Single** worker configuration (used for ALL 2 worker nodes)
 - `_out/talosconfig` - Talosctl client configuration
 
 **Optional: Custom Installer with QEMU Guest Agent**
@@ -320,25 +320,34 @@ talosctl gen config talos-homelab https://$CONTROL_PLANE_IP:6443 \
 ```
 
 Then in Proxmox UI:
-- Select VM → **Options**
+- Select each VM → **Options**
 - Enable **QEMU Guest Agent**
 
-#### Configure Static IPs
+#### Verify Disk Configuration (Important!)
 
-Edit each configuration file to add static networking.
+By default, Talos will install to `/dev/sda`. Check if your disk is named differently:
+```bash
+# Check available disks (use the temp DHCP IP from Step 4)
+talosctl get disks --insecure --nodes <temp-dhcp-ip>
 
-**Edit `_out/controlplane.yaml`** (for talos-cp-01):
+# If disk is /dev/vda instead of /dev/sda, edit the config files:
+```
+
+**Edit `_out/controlplane.yaml` and `_out/worker.yaml`** if needed:
+```yaml
+machine:
+  install:
+    disk: /dev/vda  # Change from /dev/sda if needed
+    image: ghcr.io/siderolabs/installer:v1.9.5
+    wipe: false
+```
+
+#### Configure Network Settings (Optional)
+
+Add DNS and time servers to your configs. Edit both `_out/controlplane.yaml` and `_out/worker.yaml`:
 ```yaml
 machine:
   network:
-    hostname: talos-cp-01
-    interfaces:
-      - interface: eth0
-        addresses:
-          - 10.10.5.200/24
-        routes:
-          - network: 0.0.0.0/0
-            gateway: 10.10.5.1
     nameservers:
       - 10.10.5.2
       - 10.10.5.3
@@ -348,142 +357,197 @@ machine:
       - time.cloudflare.com
 ```
 
-**Create separate configs for each node:**
+**For Static IPs (Optional):**
+
+If you want static IPs instead of DHCP, you have two options:
+
+**Option A: DHCP with Reservations (Recommended for Homelab)**
+- Don't modify the network config
+- Reserve MAC addresses in your router/DHCP server:
+  - talos-cp-01 → 10.10.5.200
+  - talos-cp-02 → 10.10.5.201
+  - talos-cp-03 → 10.10.5.202
+  - talos-worker-01 → 10.10.5.203
+  - talos-worker-02 → 10.10.5.204
+
+**Option B: Config Patches (Advanced)**
+
+Create patch files for each node with static IPs:
 ```bash
-cd _out
-
-# Copy base configs
-cp controlplane.yaml controlplane-cp-01.yaml
-cp controlplane.yaml controlplane-cp-02.yaml
-cp controlplane.yaml controlplane-cp-03.yaml
-cp worker.yaml worker-01.yaml
-cp worker.yaml worker-02.yaml
-
-# Edit each file with appropriate hostname and IP:
-# - controlplane-cp-01.yaml: hostname=talos-cp-01, IP=10.10.5.200
-# - controlplane-cp-02.yaml: hostname=talos-cp-02, IP=10.10.5.201
-# - controlplane-cp-03.yaml: hostname=talos-cp-03, IP=10.10.5.202
-# - worker-01.yaml: hostname=talos-worker-01, IP=10.10.5.203
-# - worker-02.yaml: hostname=talos-worker-02, IP=10.10.5.204
+# Example patch for cp-01
+cat > _out/cp-01-patch.yaml <<EOF
+machine:
+  network:
+    hostname: talos-cp-01
+    interfaces:
+      - interface: eth0
+        dhcp: false
+        addresses:
+          - 10.10.5.200/24
+        routes:
+          - network: 0.0.0.0/0
+            gateway: 10.10.5.1
+EOF
 ```
+
+Then apply with patch:
+```bash
+talosctl apply-config --insecure \
+  --nodes <temp-dhcp-ip> \
+  --file _out/controlplane.yaml \
+  --config-patch @_out/cp-01-patch.yaml
+```
+
+**This guide will use Option A (DHCP with reservations) for simplicity.**
 
 ---
 
-### Step 6: Apply Configuration to Control Plane
+### Step 6: Apply Configuration to Control Plane Node 1
 
-Apply the configuration using the **temporary DHCP IP**:
+Apply the `controlplane.yaml` to the first control plane node using its **temporary DHCP IP** from Step 4:
 ```bash
-# Apply config to first control plane node
+# Example: temp DHCP IP is 10.10.5.150
 talosctl apply-config --insecure \
-  --nodes $CONTROL_PLANE_IP \
-  --file _out/controlplane-cp-01.yaml
+  --nodes 10.10.5.150 \
+  --file _out/controlplane.yaml
 ```
 
 **What happens:**
-1. Talos installs to disk (`/dev/sda`)
+1. Talos installs to disk (`/dev/sda` or `/dev/vda`)
 2. VM reboots
-3. VM comes up with static IP (10.10.5.200)
-4. Kubernetes control plane initializes
+3. VM gets new IP from DHCP (or static IP if configured)
+4. Kubernetes control plane begins initializing
 
-> **Note:** VM will show as "Booting" until bootstrap is completed in a later step.
+**Reserve this node's IP as 10.10.5.200 in your router/DHCP server.**
 
-**Verify disk location:**
-```bash
-# Check available disks
-talosctl get disks --insecure --nodes $CONTROL_PLANE_IP
-
-# If disk is /dev/vda instead of /dev/sda, update the config files:
-# Edit machine.install.disk in controlplane.yaml to: /dev/vda
-```
+> **Note:** VM will show as "Booting" in Proxmox until bootstrap is completed later.
 
 ---
 
-### Step 7: Create Additional Control Plane Nodes
+### Step 7: Apply Configuration to Control Plane Nodes 2 & 3
 
-Repeat the process for control plane nodes 2 and 3:
+**Start the remaining control plane VMs:**
 ```bash
-# Start VMs
-qm start 101
-qm start 102
+# Via Proxmox CLI
+qm start 101  # talos-cp-02
+qm start 102  # talos-cp-03
 
-# Wait for maintenance mode, get IPs
-# Let's say: CP-02 = 10.10.5.X, CP-03 = 10.10.5.Y
-
-# Apply configs
-talosctl apply-config --insecure \
-  --nodes 10.10.5.X \
-  --file _out/controlplane-cp-02.yaml
-
-talosctl apply-config --insecure \
-  --nodes 10.10.5.Y \
-  --file _out/controlplane-cp-03.yaml
+# Or via Web UI: Select each VM → Start
 ```
 
-> **Note:** This process creates an HA control plane for fault tolerance.
+**Wait for each to boot into maintenance mode and note their temporary IPs.**
+
+**Apply the SAME `controlplane.yaml` to each:**
+```bash
+# Example temp IPs: cp-02 = 10.10.5.151, cp-03 = 10.10.5.152
+
+# Apply to cp-02
+talosctl apply-config --insecure \
+  --nodes 10.10.5.151 \
+  --file _out/controlplane.yaml
+
+# Apply to cp-03
+talosctl apply-config --insecure \
+  --nodes 10.10.5.152 \
+  --file _out/controlplane.yaml
+```
+
+**Reserve their IPs in your router/DHCP server:**
+- talos-cp-02 → 10.10.5.201
+- talos-cp-03 → 10.10.5.202
+
+> **Note:** Using the same `controlplane.yaml` for all control plane nodes is correct. Each node gets a unique identity automatically.
 
 ---
 
-### Step 8: Create Worker Nodes
+### Step 8: Apply Configuration to Worker Nodes
 
-Start worker VMs and apply configurations:
+**Start the worker VMs:**
 ```bash
-# Start worker VMs
-qm start 103
-qm start 104
+# Via Proxmox CLI
+qm start 103  # talos-worker-01
+qm start 104  # talos-worker-02
 
-# Wait for maintenance mode, get IPs
-# Let's say: Worker-01 = 10.10.5.A, Worker-02 = 10.10.5.B
-
-# Apply configs
-talosctl apply-config --insecure \
-  --nodes 10.10.5.A \
-  --file _out/worker-01.yaml
-
-talosctl apply-config --insecure \
-  --nodes 10.10.5.B \
-  --file _out/worker-02.yaml
+# Or via Web UI: Select each VM → Start
 ```
 
-> **Note:** Additional workers can be added by repeating this process.
+**Wait for each to boot into maintenance mode and note their temporary IPs.**
+
+**Apply the SAME `worker.yaml` to each:**
+```bash
+# Example temp IPs: worker-01 = 10.10.5.153, worker-02 = 10.10.5.154
+
+# Apply to worker-01
+talosctl apply-config --insecure \
+  --nodes 10.10.5.153 \
+  --file _out/worker.yaml
+
+# Apply to worker-02
+talosctl apply-config --insecure \
+  --nodes 10.10.5.154 \
+  --file _out/worker.yaml
+```
+
+**Reserve their IPs in your router/DHCP server:**
+- talos-worker-01 → 10.10.5.203
+- talos-worker-02 → 10.10.5.204
+
+> **Note:** Additional workers can be added by repeating this process with the same `worker.yaml`.
 
 ---
 
 ### Step 9: Configure Talosctl
 
-Configure talosctl to communicate with your cluster:
+Configure talosctl to communicate with your cluster (use the **final static IPs** after DHCP reservation):
 ```bash
 # Export talosconfig
 export TALOSCONFIG="_out/talosconfig"
 
-# Set endpoints (all control plane nodes)
+# Set endpoints (all control plane nodes with their final IPs)
 talosctl config endpoint 10.10.5.200 10.10.5.201 10.10.5.202
 
 # Set default node (first control plane)
 talosctl config node 10.10.5.200
 ```
 
+**Verify connectivity:**
+```bash
+# Should show services running
+talosctl services
+
+# Should show node info
+talosctl version
+```
+
 ---
 
 ### Step 10: Bootstrap Etcd
 
-Bootstrap the Kubernetes cluster:
+Bootstrap the Kubernetes cluster on the first control plane node:
 ```bash
 talosctl bootstrap
 ```
 
 **What happens:**
-- etcd cluster initializes on control plane nodes
-- Kubernetes control plane starts
+- etcd cluster initializes across all 3 control plane nodes
+- Kubernetes control plane components start
 - API server becomes available
 
-**Monitor bootstrap:**
+**This command should only be run ONCE on ONE control plane node.**
+
+**Monitor bootstrap progress:**
 ```bash
 # Watch logs
 talosctl dmesg --follow
 
 # Check services
 talosctl services
+
+# Check etcd members (should show all 3 control planes)
+talosctl etcd members
 ```
+
+**Wait 5-10 minutes for bootstrap to complete.**
 
 ---
 
@@ -491,11 +555,14 @@ talosctl services
 
 Once bootstrap completes, retrieve the admin kubeconfig:
 ```bash
-# Generate kubeconfig
+# Generate kubeconfig in current directory
 talosctl kubeconfig .
 
 # This creates ./kubeconfig file
 export KUBECONFIG=$(pwd)/kubeconfig
+
+# Or merge into default kubeconfig
+talosctl kubeconfig ~/.kube/config
 
 # Verify cluster access
 kubectl get nodes
@@ -510,6 +577,52 @@ talos-cp-03       Ready    control-plane   5m    v1.31.0
 talos-worker-01   Ready    <none>          5m    v1.31.0
 talos-worker-02   Ready    <none>          5m    v1.31.0
 ```
+
+**If nodes show "NotReady", wait a few more minutes for the CNI to initialize.**
+
+---
+
+### Step 12: Verify Cluster Health
+```bash
+# Check all nodes
+kubectl get nodes -o wide
+
+# Check all pods
+kubectl get pods -A
+
+# Check etcd health
+talosctl etcd members
+
+# Expected output (3 control plane members):
+# NODE           MEMBER         ID              HOSTNAME        PEER URLS
+# 10.10.5.200    talos-cp-01    123456789...    talos-cp-01     https://10.10.5.200:2380
+# 10.10.5.200    talos-cp-02    234567890...    talos-cp-02     https://10.10.5.201:2380
+# 10.10.5.200    talos-cp-03    345678901...    talos-cp-03     https://10.10.5.202:2380
+
+# Check cluster health
+talosctl health --nodes 10.10.5.200,10.10.5.201,10.10.5.202
+```
+
+---
+
+### Step 13: Verify TrueNAS NFS Connectivity
+
+Verify worker nodes can access TrueNAS NFS shares:
+```bash
+# Test connectivity to TrueNAS
+kubectl run -it --rm nfs-test --image=busybox --restart=Never -- ping -c 3 10.10.5.40
+
+# Test NFS mount
+kubectl run -it --rm nfs-mount-test --image=busybox --restart=Never -- \
+  sh -c "mkdir -p /mnt/test && mount -t nfs 10.10.5.40:/mnt/gluttonterra/k8s /mnt/test && ls -la /mnt/test && umount /mnt/test"
+```
+
+**Expected output:** List of application datasets (argocd, jellyfin, prowlarr, qbittorrent, radarr, sonarr)
+
+**If mount fails:**
+- Verify NFS service is running on TrueNAS
+- Check NFS share permissions allow 10.10.5.0/24 subnet
+- Ensure firewall allows NFS traffic (ports 111, 2049)
 
 ---
 
@@ -531,6 +644,13 @@ talosctl etcd members
 
 # Health check
 talosctl health
+
+# Reboot a node
+talosctl reboot --nodes 10.10.5.203
+
+# Upgrade Talos
+talosctl upgrade --nodes 10.10.5.200 \
+  --image ghcr.io/siderolabs/installer:v1.9.5
 ```
 
 #### Kubectl Commands
@@ -543,23 +663,75 @@ kubectl get nodes -o wide
 
 # Cluster info
 kubectl cluster-info
+
+# Describe a node
+kubectl describe node talos-cp-01
+
+# Check events
+kubectl get events -A --sort-by='.lastTimestamp'
 ```
 
 ---
 
-### TrueNAS NFS Storage Verification
+### Adding Additional Nodes
 
-Verify worker nodes can access TrueNAS NFS shares:
+#### Add Another Worker Node
 ```bash
-# Test connectivity
-kubectl run -it --rm nfs-test --image=busybox --restart=Never -- ping -c 3 10.10.5.40
+# Create VM in Proxmox (VM ID 105)
+qm create 105 \
+  --name "talos-worker-03" \
+  --memory 8192 \
+  --cores 4 \
+  --cpu host \
+  --net0 virtio,bridge=vmbr0 \
+  --scsihw virtio-scsi-pci \
+  --scsi0 local-lvm:64 \
+  --ide2 local:iso/metal-amd64.iso,media=cdrom \
+  --boot order=scsi0 \
+  --ostype l26
 
-# Test NFS mount
-kubectl run -it --rm nfs-mount-test --image=busybox --restart=Never -- \
-  sh -c "mount -t nfs 10.10.5.40:/mnt/gluttonterra/k8s /mnt && ls -la /mnt"
+# Start the VM
+qm start 105
+
+# Wait for maintenance mode, get temp IP (example: 10.10.5.155)
+
+# Apply the SAME worker.yaml
+talosctl apply-config --insecure \
+  --nodes 10.10.5.155 \
+  --file _out/worker.yaml
+
+# Reserve IP as 10.10.5.205 in router
+
+# Verify node joined
+kubectl get nodes
 ```
 
-**Expected output:** List of application datasets (argocd, jellyfin, sonarr, etc.)
+#### Add Another Control Plane Node
+```bash
+# Create VM in Proxmox (VM ID 106)
+qm create 106 \
+  --name "talos-cp-04" \
+  --memory 4096 \
+  --cores 2 \
+  --cpu host \
+  --net0 virtio,bridge=vmbr0 \
+  --scsihw virtio-scsi-pci \
+  --scsi0 local-lvm:32 \
+  --ide2 local:iso/metal-amd64.iso,media=cdrom \
+  --boot order=scsi0 \
+  --ostype l26
+
+# Start and apply config (same as worker process)
+qm start 106
+
+# Apply the SAME controlplane.yaml
+talosctl apply-config --insecure \
+  --nodes <temp-ip> \
+  --file _out/controlplane.yaml
+
+# Update talosctl endpoints
+talosctl config endpoint 10.10.5.200 10.10.5.201 10.10.5.202 10.10.5.206
+```
 
 ---
 
@@ -567,39 +739,114 @@ kubectl run -it --rm nfs-mount-test --image=busybox --restart=Never -- \
 
 To remove the cluster:
 
-1. **Stop VMs** in Proxmox UI
-2. **Delete VMs** (right-click → Remove)
-3. **Remove ISO** from local storage if no longer needed
+**Via Proxmox Web UI:**
+1. Stop all VMs
+2. Right-click each VM → **Remove**
+3. Confirm deletion
+
+**Via CLI:**
+```bash
+# Stop all VMs
+for i in {100..104}; do qm stop $i; done
+
+# Delete all VMs
+for i in {100..104}; do qm destroy $i; done
+
+# Remove ISO if no longer needed
+rm /var/lib/vz/template/iso/metal-amd64.iso
+```
 
 ---
 
 ### Troubleshooting
 
-**VM won't boot:**
-- Check CPU type is set to `host` or has required CPU flags
-- Verify ISO is correctly attached
+**VM won't boot after config apply:**
+```bash
+# Check if VM is actually running
+qm status 100
 
-**Can't apply config:**
-- Verify VM has network connectivity
-- Check firewall rules allow traffic to port 50000
-- Ensure using `--insecure` flag during initial config
+# View console
+qm terminal 100
+
+# Check boot order
+qm config 100 | grep boot
+```
+
+**Can't connect to node after applying config:**
+```bash
+# Node may still be installing to disk - wait 2-3 minutes
+# Check DHCP leases on router for new IP
+# Try pinging the expected static IP
+ping 10.10.5.200
+```
 
 **Node stuck "NotReady":**
 ```bash
 # Check kubelet logs
-talosctl logs kubelet
+talosctl logs kubelet --nodes 10.10.5.200
 
 # Check CNI pods
-kubectl get pods -n kube-system
+kubectl get pods -n kube-system | grep -E 'flannel|calico|cilium'
+
+# Wait a few more minutes - CNI takes time to initialize
 ```
 
 **etcd unhealthy:**
 ```bash
-# Check etcd status
-talosctl etcd status
+# Check etcd status on each control plane
+talosctl etcd status --nodes 10.10.5.200
+talosctl etcd status --nodes 10.10.5.201
+talosctl etcd status --nodes 10.10.5.202
 
 # Check etcd members
-talosctl etcd members
+talosctl etcd members --nodes 10.10.5.200
+
+# Verify all 3 members are listed
+```
+
+**Bootstrap fails:**
+```bash
+# Check if already bootstrapped
+talosctl etcd members --nodes 10.10.5.200
+
+# If showing members, cluster is already bootstrapped
+# If empty, try bootstrap again
+talosctl bootstrap
+```
+
+**Wrong disk detected:**
+```bash
+# Check available disks
+talosctl get disks --insecure --nodes <node-ip>
+
+# Update controlplane.yaml and worker.yaml:
+# Change machine.install.disk from /dev/sda to /dev/vda (or correct disk)
+# Re-apply configs
+```
+
+**NFS mount fails:**
+```bash
+# Test from cluster
+kubectl run -it --rm debug --image=busybox --restart=Never -- ping 10.10.5.40
+
+# Check TrueNAS NFS service
+# Verify authorized networks: 10.10.5.0/24
+# Check firewall allows NFS (ports 111, 2049)
+```
+
+**QEMU Guest Agent not working:**
+```bash
+# Verify QEMU agent is enabled in Proxmox
+qm config 100 | grep agent
+
+# Should show: agent: 1
+
+# If not, enable it
+qm set 100 --agent 1
+
+# Verify custom installer image was used in config
+grep "install:" _out/controlplane.yaml
+# Should show: factory.talos.dev/installer/ce4c980...
 ```
 
 ---
@@ -609,14 +856,62 @@ talosctl etcd members
 ✅ **Talos Linux Cluster - Complete!**
 
 **Your cluster now has:**
-- ✅ 3 control plane nodes (HA)
-- ✅ 2 worker nodes
-- ✅ etcd quorum established
-- ✅ Kubernetes API accessible
-- ✅ Static IP configuration
+- ✅ 3 control plane nodes at 10.10.5.200-202 (HA with etcd quorum)
+- ✅ 2 worker nodes at 10.10.5.203-204
+- ✅ etcd cluster established across control planes
+- ✅ Kubernetes API accessible at https://10.10.5.200:6443
+- ✅ Static IP addressing via DHCP reservations
+- ✅ NFS connectivity to TrueNAS verified
 
 **Proceed to:**
-2. ⬜ **MetalLB Installation** - Load balancer for bare metal services
+2. ⬜ **MetalLB Installation** - Deploy load balancer for bare metal services
+   - Required for exposing services outside the cluster
+   - Provides LoadBalancer IP addresses for Traefik and applications
+
+**After MetalLB, you'll install:**
+3. ⬜ Traefik (ingress controller)
+4. ⬜ CoreDNS configuration
+5. ⬜ Forgejo (Git server)
+6. ⬜ ArgoCD (GitOps)
+7. ⬜ Applications with NFS-backed PersistentVolumes
+
+---
+
+### Backup & Disaster Recovery
+
+**Backup Configuration Files:**
+```bash
+# Backup all generated configs
+mkdir -p ~/backups/talos-cluster-$(date +%Y%m%d)
+cp _out/* ~/backups/talos-cluster-$(date +%Y%m%d)/
+
+# Store in multiple locations (external drive, cloud, etc.)
+```
+
+**Snapshot VMs in Proxmox:**
+```bash
+# Take snapshots after successful setup
+for i in {100..104}; do
+  qm snapshot $i initial-setup --description "Initial cluster setup - $(date)"
+done
+```
+
+**Backup etcd:**
+```bash
+# Take regular etcd backups
+talosctl etcd snapshot --nodes 10.10.5.200 ~/backups/etcd-backup-$(date +%Y%m%d).db
+
+# Automate with cron
+echo "0 2 * * * talosctl etcd snapshot --nodes 10.10.5.200 ~/backups/etcd-backup-\$(date +\%Y\%m\%d).db" | crontab -
+```
+
+**Backup TrueNAS Datasets:**
+
+Configure TrueNAS snapshot tasks for `gluttonterra/k8s`:
+1. Storage → Snapshots → Add Periodic Snapshot Task
+2. Dataset: `gluttonterra/k8s`
+3. Recursive: ✅ Enabled
+4. Configure retention (hourly: 24, daily: 7, weekly: 4, monthly: 12)
 
 ---
 
@@ -626,6 +921,7 @@ talosctl etcd members
 - **Talos Documentation:** https://www.talos.dev/
 - **Kubernetes Documentation:** https://kubernetes.io/docs/
 - **TrueNAS Documentation:** https://www.truenas.com/docs/
+- **Next Step:** MetalLB Installation (`kubernetes/apps/metallb/readme.md`)
 
 ---
 
@@ -641,6 +937,13 @@ DNS:           10.10.5.2, 10.10.5.3
 API Server:    https://10.10.5.200:6443
 ```
 
+**Configuration Files:**
+```
+_out/controlplane.yaml  - Single file for ALL 3 control plane nodes
+_out/worker.yaml        - Single file for ALL 2 worker nodes
+_out/talosconfig        - Talosctl client configuration
+```
+
 **Essential Commands:**
 ```bash
 # Check cluster health
@@ -650,9 +953,22 @@ talosctl health
 # Get kubeconfig
 talosctl kubeconfig .
 
-# Bootstrap (one time only)
+# Bootstrap (one time only, on first control plane)
 talosctl bootstrap
 
 # View logs
 talosctl logs kubelet
+
+# Check etcd
+talosctl etcd members
+
+# Apply same config to new node
+talosctl apply-config --insecure --nodes <ip> --file _out/worker.yaml
+```
+
+**TrueNAS NFS Paths:**
+```
+Server: 10.10.5.40
+Base:   /mnt/gluttonterra/k8s
+Apps:   /mnt/gluttonterra/k8s/{argocd,jellyfin,prowlarr,qbittorrent,radarr,sonarr}
 ```
