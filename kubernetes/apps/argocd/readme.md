@@ -6,7 +6,7 @@ This section shows where ArgoCD fits in the overall Kubernetes cluster setup pro
 
 **Prerequisites & Setup Order:**
 
-1. ✅ **Talos Linux Cluster** - Base Kubernetes cluster installed
+1. ✅ **Proxmox VM Creation & Talos Linux Cluster** - Base Kubernetes cluster installed
 2. ✅ **MetalLB** - Load balancer for bare metal (`kubernetes/apps/metallb/`)
 3. ✅ **Traefik** - Ingress controller and reverse proxy (`kubernetes/apps/traefik/`)
 4. ✅ **CoreDNS Configuration** - DNS resolution for `.servers.local` domains (`kubernetes/apps/kube-system/coredns-config.yaml`)
