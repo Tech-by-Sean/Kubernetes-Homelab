@@ -1,0 +1,33 @@
+# NFS Persistent Volume for Immich Config (Database, cache, etc.)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: immich-config-pv
+spec:
+  capacity:
+    storage: 50Gi  # Config is much smaller
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-immich-config
+  nfs:
+    server: 10.10.5.40  # Replace with your TrueNAS IP
+    path: /mnt/master-storage/immich-photos/config
+  mountOptions:
+    - nfsvers=4
+    - hard
+    - intr
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-config-pvc
+  namespace: immich
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-immich-config
+  resources:
+    requests:
+      storage: 50Gi
+  volumeName: immich-config-pv
