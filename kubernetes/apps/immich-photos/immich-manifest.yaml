@@ -1,0 +1,395 @@
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: immich
+
+---
+# ConfigMap for environment variables
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: immich-config
+  namespace: immich
+data:
+  DB_HOSTNAME: "immich-postgresql"
+  DB_USERNAME: "postgres"
+  DB_DATABASE_NAME: "immich"
+  REDIS_HOSTNAME: "immich-redis"
+  UPLOAD_LOCATION: "/usr/src/app/upload"
+
+---
+# Secret for sensitive data
+apiVersion: v1
+kind: Secret
+metadata:
+  name: immich-secrets
+  namespace: immich
+type: Opaque
+stringData:
+  DB_PASSWORD: "ChangeThisSecurePassword123!"  # CHANGE THIS!
+
+---
+# PostgreSQL Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich-postgresql
+  namespace: immich
+  labels:
+    app: immich-postgresql
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: immich-postgresql
+  template:
+    metadata:
+      labels:
+        app: immich-postgresql
+    spec:
+      containers:
+      - name: postgresql
+        image: tensorchord/pgvecto-rs:pg14-v0.2.0
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: immich-config
+              key: DB_USERNAME
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: immich-secrets
+              key: DB_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: immich-config
+              key: DB_DATABASE_NAME
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        ports:
+        - containerPort: 5432
+          name: postgresql
+          protocol: TCP
+        volumeMounts:
+        - name: config-storage
+          mountPath: /var/lib/postgresql/data
+          subPath: database
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U postgres
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U postgres
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: config-storage
+        persistentVolumeClaim:
+          claimName: immich-config-pvc
+
+---
+# PostgreSQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich-postgresql
+  namespace: immich
+  labels:
+    app: immich-postgresql
+spec:
+  selector:
+    app: immich-postgresql
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+    name: postgresql
+  type: ClusterIP
+
+---
+# Redis Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich-redis
+  namespace: immich
+  labels:
+    app: immich-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: immich-redis
+  template:
+    metadata:
+      labels:
+        app: immich-redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:6.2-alpine
+        command:
+        - redis-server
+        - --save
+        - "60"
+        - "1"
+        - --dir
+        - /data
+        ports:
+        - containerPort: 6379
+          name: redis
+          protocol: TCP
+        volumeMounts:
+        - name: config-storage
+          mountPath: /data
+          subPath: redis
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        livenessProbe:
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: config-storage
+        persistentVolumeClaim:
+          claimName: immich-config-pvc
+
+---
+# Redis Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich-redis
+  namespace: immich
+  labels:
+    app: immich-redis
+spec:
+  selector:
+    app: immich-redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+    protocol: TCP
+    name: redis
+  type: ClusterIP
+
+---
+# Immich Server Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich-server
+  namespace: immich
+  labels:
+    app: immich-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: immich-server
+  template:
+    metadata:
+      labels:
+        app: immich-server
+    spec:
+      containers:
+      - name: immich-server
+        image: ghcr.io/immich-app/immich-server:release
+        envFrom:
+        - configMapRef:
+            name: immich-config
+        env:
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: immich-secrets
+              key: DB_PASSWORD
+        ports:
+        - containerPort: 3001
+          name: http
+          protocol: TCP
+        volumeMounts:
+        - name: data-storage
+          mountPath: /usr/src/app/upload
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+        livenessProbe:
+          httpGet:
+            path: /api/server-info/ping
+            port: 3001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        readinessProbe:
+          httpGet:
+            path: /api/server-info/ping
+            port: 3001
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: data-storage
+        persistentVolumeClaim:
+          claimName: immich-data-pvc
+
+---
+# Immich Machine Learning Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich-machine-learning
+  namespace: immich
+  labels:
+    app: immich-machine-learning
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: immich-machine-learning
+  template:
+    metadata:
+      labels:
+        app: immich-machine-learning
+    spec:
+      containers:
+      - name: immich-machine-learning
+        image: ghcr.io/immich-app/immich-machine-learning:release
+        envFrom:
+        - configMapRef:
+            name: immich-config
+        env:
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: immich-secrets
+              key: DB_PASSWORD
+        ports:
+        - containerPort: 3003
+          name: http
+          protocol: TCP
+        volumeMounts:
+        - name: data-storage
+          mountPath: /usr/src/app/upload
+        - name: config-storage
+          mountPath: /cache
+          subPath: model-cache
+        resources:
+          requests:
+            cpu: 250m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+        # Uncomment for GPU support (NVIDIA)
+        # resources:
+        #   limits:
+        #     nvidia.com/gpu: 1
+      volumes:
+      - name: data-storage
+        persistentVolumeClaim:
+          claimName: immich-data-pvc
+      - name: config-storage
+        persistentVolumeClaim:
+          claimName: immich-config-pvc
+
+---
+# Immich Server Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich-server
+  namespace: immich
+  labels:
+    app: immich-server
+spec:
+  selector:
+    app: immich-server
+  ports:
+  - port: 3001
+    targetPort: 3001
+    protocol: TCP
+    name: http
+  type: ClusterIP
+
+---
+# Immich Machine Learning Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich-machine-learning
+  namespace: immich
+  labels:
+    app: immich-machine-learning
+spec:
+  selector:
+    app: immich-machine-learning
+  ports:
+  - port: 3003
+    targetPort: 3003
+    protocol: TCP
+    name: http
+  type: ClusterIP
+
+---
+# Traefik IngressRoute (HTTPS)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: immich-https
+  namespace: immich
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`immich.servers.local`) || Host(`immich.yourdomain.com`)  # CHANGE THIS
+      kind: Rule
+      services:
+        - name: immich-server
+          port: 3001
+  tls:
+    certResolver: letsencrypt  # Change to your cert resolver name

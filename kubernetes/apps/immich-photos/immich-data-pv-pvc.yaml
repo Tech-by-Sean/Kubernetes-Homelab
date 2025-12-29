@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: immich-data-pv
+spec:
+  capacity:
+    storage: 1000Gi  # Adjust based on your needs
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-immich-data
+  nfs:
+    server: 10.10.5.40
+    path: /mnt/master-storage/immich-photos/data
+    - nfsvers=4
+    - hard
+    - intr
+    - noatime
+    - nodiratime
+
+---
+# NFS Persistent Volume Claim for Immich Data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-data-pvc
+  namespace: immich
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-immich-data
+  resources:
+    requests:
+      storage: 500Gi
+  volumeName: immich-data-pv
