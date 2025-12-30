@@ -28,7 +28,7 @@ metadata:
   namespace: immich
 type: Opaque
 stringData:
-  DB_PASSWORD: "ChangeThisSecurePassword123!"  # CHANGE THIS!
+  DB_PASSWORD: "Letmein123"
 
 ---
 # PostgreSQL Deployment
@@ -243,7 +243,7 @@ spec:
               name: immich-secrets
               key: DB_PASSWORD
         ports:
-        - containerPort: 3001
+        - containerPort: 2283
           name: http
           protocol: TCP
         volumeMounts:
@@ -259,16 +259,16 @@ spec:
         livenessProbe:
           httpGet:
             path: /api/server-info/ping
-            port: 3001
-          initialDelaySeconds: 30
+            port: 2283
+          initialDelaySeconds: 60
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 6
         readinessProbe:
           httpGet:
             path: /api/server-info/ping
-            port: 3001
-          initialDelaySeconds: 10
+            port: 2283
+          initialDelaySeconds: 30
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
@@ -325,10 +325,6 @@ spec:
           limits:
             cpu: 2000m
             memory: 4Gi
-        # Uncomment for GPU support (NVIDIA)
-        # resources:
-        #   limits:
-        #     nvidia.com/gpu: 1
       volumes:
       - name: data-storage
         persistentVolumeClaim:
@@ -351,7 +347,7 @@ spec:
     app: immich-server
   ports:
   - port: 3001
-    targetPort: 3001
+    targetPort: 2283
     protocol: TCP
     name: http
   type: ClusterIP
@@ -376,6 +372,23 @@ spec:
   type: ClusterIP
 
 ---
+# Traefik IngressRoute (HTTP)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: immich-http
+  namespace: immich
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`immich.servers.local`) || Host(`immich.techbysean.com`)
+      kind: Rule
+      services:
+        - name: immich-server
+          port: 3001
+
+---
 # Traefik IngressRoute (HTTPS)
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
@@ -386,10 +399,10 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`immich.servers.local`) || Host(`immich.yourdomain.com`)  # CHANGE THIS
+    - match: Host(`immich.servers.local`) || Host(`immich.techbysean.com`)
       kind: Rule
       services:
         - name: immich-server
           port: 3001
   tls:
-    certResolver: letsencrypt  # Change to your cert resolver name
+    certResolver: letsencrypt
