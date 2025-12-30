@@ -51,9 +51,22 @@ spec:
       labels:
         app: immich-postgresql
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: postgresql
         image: tensorchord/pgvecto-rs:pg14-v0.2.0
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: false
         env:
         - name: POSTGRES_USER
           valueFrom:
@@ -150,9 +163,22 @@ spec:
       labels:
         app: immich-redis
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: redis
         image: redis:6.2-alpine
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: false
         command:
         - redis-server
         - --save
@@ -230,9 +256,22 @@ spec:
       labels:
         app: immich-server
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: immich-server
         image: ghcr.io/immich-app/immich-server:release
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: false
         envFrom:
         - configMapRef:
             name: immich-config
@@ -296,9 +335,22 @@ spec:
       labels:
         app: immich-machine-learning
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: immich-machine-learning
         image: ghcr.io/immich-app/immich-machine-learning:release
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: false
         envFrom:
         - configMapRef:
             name: immich-config
