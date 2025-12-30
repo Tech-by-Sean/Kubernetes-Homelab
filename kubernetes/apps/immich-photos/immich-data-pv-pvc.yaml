@@ -12,12 +12,12 @@ spec:
   nfs:
     server: 10.10.5.40
     path: /mnt/master-storage/immich-photos/data
+  mountOptions:
     - nfsvers=4
     - hard
     - intr
     - noatime
     - nodiratime
-
 ---
 # NFS Persistent Volume Claim for Immich Data
 apiVersion: v1
@@ -31,5 +31,5 @@ spec:
   storageClassName: nfs-immich-data
   resources:
     requests:
-      storage: 500Gi
+      storage: 1000Gi
   volumeName: immich-data-pv
