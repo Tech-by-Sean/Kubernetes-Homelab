@@ -258,19 +258,19 @@ spec:
             memory: 4Gi
         livenessProbe:
           httpGet:
-            path: /api/server-info/ping
+            path: /api/server-info/version
             port: 2283
-          initialDelaySeconds: 60
+          initialDelaySeconds: 120
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 6
         readinessProbe:
           httpGet:
-            path: /api/server-info/ping
+            path: /api/server-info/version
             port: 2283
-          initialDelaySeconds: 30
-          periodSeconds: 5
-          timeoutSeconds: 3
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
           failureThreshold: 3
       volumes:
       - name: data-storage
