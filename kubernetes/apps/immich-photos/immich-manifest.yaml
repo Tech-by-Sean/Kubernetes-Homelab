@@ -258,7 +258,7 @@ spec:
             memory: 4Gi
         livenessProbe:
           httpGet:
-            path: /api/server-info/version
+            path: /api/server/ping
             port: 2283
           initialDelaySeconds: 120
           periodSeconds: 10
@@ -266,7 +266,7 @@ spec:
           failureThreshold: 6
         readinessProbe:
           httpGet:
-            path: /api/server-info/version
+            path: /api/server/ping
             port: 2283
           initialDelaySeconds: 60
           periodSeconds: 10
