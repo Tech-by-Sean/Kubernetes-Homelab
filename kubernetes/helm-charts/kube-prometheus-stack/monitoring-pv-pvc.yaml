@@ -1,15 +1,18 @@
 ---
-# Prometheus PersistentVolume
+# Prometheus PersistentVolume - Updated to match auto-generated PVC name
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: prometheus-pv
+  name: prometheus-kube-prometheus-stack-db
 spec:
   capacity:
     storage: 50Gi
   accessModes:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
+  claimRef:
+    namespace: monitoring
+    name: prometheus-kube-prometheus-stack-prometheus-db-prometheus-kube-prometheus-stack-prometheus-0
   nfs:
     server: 10.10.5.40
     path: /mnt/master-storage/monitoring/prometheus
@@ -17,19 +20,8 @@ spec:
     - nfsvers=4.1
     - hard
 ---
-# Prometheus PersistentVolumeClaim
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: prometheus-pvc
-  namespace: monitoring
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 50Gi
-  volumeName: prometheus-pv
+# Remove the manual prometheus-pvc - Prometheus creates its own
+# (Delete the prometheus-pvc section entirely)
 ---
 # Grafana PersistentVolume
 apiVersion: v1
