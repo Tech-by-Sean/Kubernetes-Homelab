@@ -15,12 +15,17 @@ alertmanager:
       group_interval: 10s
       repeat_interval: 12h
       receiver: 'telegram'
+      routes:
+      - receiver: 'null'
+        matchers:
+        - alertname =~ "InfoInhibitor|Watchdog"
     
     receivers:
+    - name: 'null'  # Add null receiver for default routes
     - name: 'telegram'
       telegram_configs:
       - bot_token_file: /etc/alertmanager/secrets/alertmanager-telegram/bot-token
-        chat_id: 768244878  # Use chat_id directly, not chat_id_file
+        chat_id: 768244878
         parse_mode: 'HTML'
         message: |
           {{ range .Alerts }}
