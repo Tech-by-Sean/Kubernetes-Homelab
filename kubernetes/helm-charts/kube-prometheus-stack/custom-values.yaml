@@ -3,6 +3,13 @@ alertmanager:
   alertmanagerSpec:
     secrets:
       - alertmanager-telegram
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
   
   config:
     global:
@@ -30,7 +37,7 @@ alertmanager:
           {{ .Annotations.description }}
           {{ end }}
 
-# Enable resource metrics
+# Enable Prometheus with persistent storage
 prometheus:
   prometheusSpec:
     retention: 30d
@@ -42,9 +49,12 @@ prometheus:
             requests:
               storage: 50Gi
 
-# Enable Grafana with persistence
+# Enable Grafana with existing PVC
 grafana:
   enabled: true
   persistence:
     enabled: true
-    size: 10Gi
+    existingClaim: grafana-pvc
+  
+  # Grafana admin credentials
+  adminPassword: YourSecurePasswordHere
