@@ -66,3 +66,18 @@ spec:
     targetPort: 6767
     name: http
   type: ClusterIP
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: bazarr
+  namespace: media
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`bazarr.servers.local`) || Host(`bazarr.techbysean.com`)
+      kind: Rule
+      services:
+        - name: bazarr
+          port: 6767
