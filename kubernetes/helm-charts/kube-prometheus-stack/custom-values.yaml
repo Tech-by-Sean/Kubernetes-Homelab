@@ -1,15 +1,9 @@
 # Alertmanager configuration for Telegram
 alertmanager:
+  enabled: true  # Explicitly enable it
   alertmanagerSpec:
     secrets:
       - alertmanager-telegram
-    storage:
-      volumeClaimTemplate:
-        spec:
-          accessModes: ["ReadWriteOnce"]
-          resources:
-            requests:
-              storage: 5Gi
   
   config:
     global:
