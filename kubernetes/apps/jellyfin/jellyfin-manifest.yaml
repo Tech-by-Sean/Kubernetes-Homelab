@@ -23,8 +23,6 @@ spec:
       containers:
         - name: jellyfin
           image: linuxserver/jellyfin:latest
-          securityContext:
-            privileged: true
           env:
             - name: PUID
               value: "1000"
@@ -42,10 +40,9 @@ spec:
               mountPath: /media/movies
             - name: shows
               mountPath: /media/shows
-            - name: dri
-              mountPath: /dev/dri
           resources:
             limits:
+              gpu.intel.com/i915: 1  # Request Intel GPU
               memory: "4Gi"
               cpu: "2000m"
             requests:
@@ -61,9 +58,6 @@ spec:
         - name: shows
           persistentVolumeClaim:
             claimName: jellyfin-shows
-        - name: dri
-          hostPath:
-            path: /dev/dri
 ---
 apiVersion: v1
 kind: Service
