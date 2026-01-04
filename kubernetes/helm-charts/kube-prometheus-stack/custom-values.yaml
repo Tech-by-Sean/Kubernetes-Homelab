@@ -1,3 +1,13 @@
+# Disable Talos control plane monitoring (not exposed on standard ports)
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+
 # Alertmanager configuration for Telegram
 alertmanager:
   enabled: true
