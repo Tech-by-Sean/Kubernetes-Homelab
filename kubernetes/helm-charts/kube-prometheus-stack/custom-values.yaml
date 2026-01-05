@@ -75,26 +75,26 @@ additionalPrometheusRulesMap:
       interval: 30s
       rules:
       - alert: PodCrashLooping
-        expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
-        for: 5m
+        expr: rate(kube_pod_container_status_restarts_total[5m]) > 0
+        for: 30s
         labels:
           severity: warning
         annotations:
           summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping"
-          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} (container {{ $labels.container }}) has restarted {{ $value | humanize }} times in the last 15 minutes"
+          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} (container {{ $labels.container }}) has restarted in the last 5 minutes"
       
       - alert: PodNotReady
         expr: kube_pod_status_phase{phase!~"Running|Succeeded"} > 0
-        for: 10m
+        for: 30s
         labels:
           severity: warning
         annotations:
           summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is not ready"
-          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in {{ $labels.phase }} phase for more than 10 minutes"
+          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in {{ $labels.phase }} phase for more than 30 seconds"
       
       - alert: PodOOMKilled
         expr: kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} > 0
-        for: 1m
+        for: 15s
         labels:
           severity: critical
         annotations:
@@ -103,7 +103,7 @@ additionalPrometheusRulesMap:
       
       - alert: DeploymentReplicasMismatch
         expr: kube_deployment_spec_replicas{namespace!~"kube-.*"} != kube_deployment_status_replicas_available{namespace!~"kube-.*"}
-        for: 10m
+        for: 30s
         labels:
           severity: warning
         annotations:
@@ -112,7 +112,7 @@ additionalPrometheusRulesMap:
       
       - alert: StatefulSetReplicasMismatch
         expr: kube_statefulset_status_replicas_ready != kube_statefulset_status_replicas
-        for: 10m
+        for: 30s
         labels:
           severity: warning
         annotations:
@@ -121,7 +121,7 @@ additionalPrometheusRulesMap:
       
       - alert: DaemonSetNotScheduled
         expr: kube_daemonset_status_desired_number_scheduled != kube_daemonset_status_current_number_scheduled
-        for: 10m
+        for: 30s
         labels:
           severity: warning
         annotations:
@@ -130,9 +130,9 @@ additionalPrometheusRulesMap:
       
       - alert: PodPending
         expr: kube_pod_status_phase{phase="Pending"} > 0
-        for: 15m
+        for: 45s
         labels:
           severity: warning
         annotations:
           summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} stuck in Pending"
-          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in Pending state for more than 15 minutes. Check node resources and pod events."
+          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in Pending state for more than 45 seconds. Check node resources and pod events."
