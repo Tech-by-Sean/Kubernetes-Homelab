@@ -72,11 +72,11 @@ additionalPrometheusRulesMap:
   pod-monitoring:
     groups:
     - name: pod-health
-      interval: 30s
+      interval: 15s
       rules:
       - alert: PodCrashLooping
         expr: rate(kube_pod_container_status_restarts_total[5m]) > 0
-        for: 30s
+        for: 15s
         labels:
           severity: warning
         annotations:
@@ -85,16 +85,16 @@ additionalPrometheusRulesMap:
       
       - alert: PodNotReady
         expr: kube_pod_status_phase{phase!~"Running|Succeeded"} > 0
-        for: 30s
+        for: 15s
         labels:
           severity: warning
         annotations:
           summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is not ready"
-          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in {{ $labels.phase }} phase for more than 30 seconds"
+          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in {{ $labels.phase }} phase for more than 15 seconds"
       
       - alert: PodOOMKilled
         expr: kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} > 0
-        for: 15s
+        for: 10s
         labels:
           severity: critical
         annotations:
@@ -102,37 +102,55 @@ additionalPrometheusRulesMap:
           description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} was killed due to out of memory"
       
       - alert: DeploymentReplicasMismatch
-        expr: kube_deployment_spec_replicas{namespace!~"kube-.*"} != kube_deployment_status_replicas_available{namespace!~"kube-.*"}
-        for: 30s
+        expr: |
+          (
+            kube_deployment_spec_replicas{namespace!~"kube-.*"}
+            -
+            on(namespace,deployment) group_left
+            kube_deployment_status_replicas_available{namespace!~"kube-.*"}
+          ) > 0
+        for: 15s
         labels:
           severity: warning
         annotations:
           summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has replica mismatch"
-          description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} wants {{ $labels.spec_replicas }} replicas but only has {{ $labels.available_replicas }} available"
+          description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} is missing replicas"
       
       - alert: StatefulSetReplicasMismatch
-        expr: kube_statefulset_status_replicas_ready != kube_statefulset_status_replicas
-        for: 30s
+        expr: |
+          (
+            kube_statefulset_status_replicas{namespace!~"kube-.*"}
+            -
+            on(namespace,statefulset) group_left
+            kube_statefulset_status_replicas_ready{namespace!~"kube-.*"}
+          ) > 0
+        for: 15s
         labels:
           severity: warning
         annotations:
           summary: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} has replica mismatch"
-          description: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} has {{ $labels.ready_replicas }} ready but wants {{ $labels.replicas }}"
+          description: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} is missing ready replicas"
       
       - alert: DaemonSetNotScheduled
-        expr: kube_daemonset_status_desired_number_scheduled != kube_daemonset_status_current_number_scheduled
-        for: 30s
+        expr: |
+          (
+            kube_daemonset_status_desired_number_scheduled{namespace!~"kube-.*"}
+            -
+            on(namespace,daemonset) group_left
+            kube_daemonset_status_current_number_scheduled{namespace!~"kube-.*"}
+          ) > 0
+        for: 15s
         labels:
           severity: warning
         annotations:
           summary: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} is not fully scheduled"
-          description: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} wants {{ $labels.desired_number_scheduled }} pods but only has {{ $labels.current_number_scheduled }} scheduled"
+          description: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} is missing scheduled pods"
       
       - alert: PodPending
         expr: kube_pod_status_phase{phase="Pending"} > 0
-        for: 45s
+        for: 30s
         labels:
           severity: warning
         annotations:
           summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} stuck in Pending"
-          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in Pending state for more than 45 seconds. Check node resources and pod events."
+          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in Pending state for more than 30 seconds. Check node resources and pod events."
