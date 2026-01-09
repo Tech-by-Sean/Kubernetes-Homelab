@@ -23,16 +23,36 @@ subsets:
     protocol: TCP
 ---
 apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: nextcloud-security-headers
+  namespace: file-management
+spec:
+  headers:
+    stsSeconds: 15552000
+    stsIncludeSubdomains: true
+    stsPreload: true
+    forceSTSHeader: true
+    contentTypeNosniff: true
+    browserXssFilter: true
+    frameDeny: true
+    customResponseHeaders:
+      X-Robots-Tag: "noindex, nofollow"
+---
+apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: nextcloud
   namespace: file-management
 spec:
   entryPoints:
-    - web
+    - websecure  # Port 443; HSTS will not activate on plain 'web' (80)
   routes:
   - kind: Rule
     match: Host(`nextcloud.servers.local`) || Host(`nextcloud.techbysean.com`)
+    middlewares:
+    - name: nextcloud-security-headers
     services:
     - name: nextcloud
       port: 80
+  tls: {} # Automatically uses your Traefik default cert or resolver
