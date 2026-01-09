@@ -1,4 +1,3 @@
-cat > /tmp/nextcloud-complete.yaml << 'EOF'
 apiVersion: v1
 kind: Service
 metadata:
@@ -38,4 +37,3 @@ spec:
     - name: nextcloud
       port: 80
   tls: {}
-EOF
