@@ -1,0 +1,38 @@
+# nextcloud-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nextcloud
+  namespace: file-management
+spec:
+  ports:
+  - port: 80
+    targetPort: 30027
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: nextcloud
+  namespace: file-management
+subsets:
+- addresses:
+  - ip: 10.10.5.40  # Your TrueNAS IP
+  ports:
+  - port: 30027
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: nextcloud
+  namespace: file-management
+spec:
+  entryPoints:
+    - websecure
+  routes:
+  - match: Host(`nextcloud.servers.local`) || Host(`nextcloud.techbysean.com`)
+    kind: Rule
+    services:
+    - name: nextcloud
+      port: 80
+  tls:
+    certResolver: default
