@@ -1,13 +1,15 @@
-# nextcloud-service.yaml
+cat > /tmp/nextcloud-complete.yaml << 'EOF'
 apiVersion: v1
 kind: Service
 metadata:
   name: nextcloud
   namespace: file-management
 spec:
+  type: ClusterIP
   ports:
   - port: 80
     targetPort: 30027
+    protocol: TCP
 ---
 apiVersion: v1
 kind: Endpoints
@@ -16,9 +18,10 @@ metadata:
   namespace: file-management
 subsets:
 - addresses:
-  - ip: 10.10.5.40  # Your TrueNAS IP
+  - ip: 10.10.5.40
   ports:
   - port: 30027
+    protocol: TCP
 ---
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
@@ -34,5 +37,5 @@ spec:
     services:
     - name: nextcloud
       port: 80
-  tls:
-    certResolver: default
+  tls: {}
+EOF
