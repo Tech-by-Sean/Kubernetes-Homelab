@@ -29,7 +29,7 @@ metadata:
   namespace: file-management
 spec:
   entryPoints:
-    - websecure
+    - web
   routes:
   - match: Host(`nextcloud.servers.local`) || Host(`nextcloud.techbysean.com`)
     kind: Rule
