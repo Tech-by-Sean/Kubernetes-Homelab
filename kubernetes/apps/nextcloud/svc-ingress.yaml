@@ -22,7 +22,6 @@ subsets:
   - port: 30027
     protocol: TCP
 ---
-kubectl apply -f - << 'EOF'
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -37,4 +36,3 @@ spec:
     services:
     - name: nextcloud
       port: 80
-EOF
