@@ -1,4 +1,4 @@
-extension = input('What is the name of your file? ')
+extension = str(input('What is the name of your file? '))
 
 if extension == ['.gif, .jpg, .jpeg, .png, .pdf, .txt, .zip']:
     print(extension)
