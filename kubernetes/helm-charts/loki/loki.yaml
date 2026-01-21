@@ -99,7 +99,6 @@ spec:
     syncOptions:
       - CreateNamespace=true
 ---
-# Traefik IngressRoute for Loki
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:

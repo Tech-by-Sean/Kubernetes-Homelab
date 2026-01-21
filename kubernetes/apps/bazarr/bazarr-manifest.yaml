@@ -52,6 +52,7 @@ spec:
       - name: shows
         persistentVolumeClaim:
           claimName: jellyfin-shows
+  ttlSecondsAfterFinished: 100
 ---
 apiVersion: v1
 kind: Service
