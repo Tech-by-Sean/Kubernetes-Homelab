@@ -1,5 +1,5 @@
 def main():
-    x = fraction('Fraction: ')
+    x: str = fraction('Fraction: ')
     print(x)
 
 def fraction(prompt):
