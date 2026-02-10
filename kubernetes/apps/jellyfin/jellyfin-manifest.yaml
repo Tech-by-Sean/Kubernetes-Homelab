@@ -42,12 +42,13 @@ spec:
               mountPath: /media/shows
           resources:
             limits:
-              gpu.intel.com/i915: 1  # Request Intel GPU
-              memory: "4Gi"
               cpu: "2000m"
+              memory: "8Gi"
+              gpu.intel.com/i915: 1  # Request Intel GPU
             requests:
-              memory: "1Gi"
               cpu: "500m"
+              memory: "2Gi"
+              gpu-intel.com/i915: 1  # Request Intel GPU
       volumes:
         - name: config
           persistentVolumeClaim:
