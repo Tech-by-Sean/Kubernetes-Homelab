@@ -48,7 +48,7 @@ spec:
             requests:
               cpu: "500m"
               memory: "2Gi"
-              gpu-intel.com/i915: 1  # Request Intel GPU
+              gpu.intel.com/i915: 1  # Request Intel GPU
       volumes:
         - name: config
           persistentVolumeClaim:
