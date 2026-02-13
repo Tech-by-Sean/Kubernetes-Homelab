@@ -1,444 +1,186 @@
----
+# Talos Cluster Config Generation Guide
 
-### Adding Nodes to an Existing Cluster
-
-Once your cluster is running, you can easily add more control plane or worker nodes. The process is straightforward because you use the **same configuration files** that you used during initial setup.
-
----
-
-#### Adding a Control Plane Node
-
-**When to add:**
-- Want higher availability (5 control planes can tolerate 2 failures)
-- Need more control plane capacity
-- Replacing a failed control plane node
-
-**Step-by-Step Process:**
-
-**1. Create the VM in Proxmox**
-
-Via Web UI:
-- Click **Create VM**
-- VM ID: `106` (next available)
-- Name: `talos-cp-04`
-- OS: Select `metal-amd64.iso`
-- CPU: 2 cores, type `host`
-- Memory: 4096 MB
-- Disk: 32 GB
-- Network: Bridge `vmbr0`, Model `VirtIO`
-- Finish (don't start yet)
-
-Via CLI:
-```bash
-# SSH to Proxmox
-ssh root@proxmox.local
-
-# Create the VM
-qm create 106 \
-  --name "talos-cp-04" \
-  --memory 4096 \
-  --cores 2 \
-  --cpu host \
-  --net0 virtio,bridge=vmbr0 \
-  --scsihw virtio-scsi-pci \
-  --scsi0 local-lvm:32 \
-  --ide2 local:iso/metal-amd64.iso,media=cdrom \
-  --boot order=scsi0 \
-  --ostype l26
-```
-
-**2. Start the VM**
-```bash
-# Via CLI
-qm start 106
-
-# Or via Web UI: Select VM → Start
-```
-
-**3. Wait for Maintenance Mode**
-
-Watch the console until you see:
-```
-[talos] task starting {"component":"controller-runtime","task":"network-setup"}
-[talos] acquired IP address {"component":"controller-runtime","address":"10.10.5.156/24"}
-```
-
-Note the temporary DHCP IP (example: `10.10.5.156`)
-
-**4. Apply the SAME controlplane.yaml**
-```bash
-# Use the ORIGINAL controlplane.yaml from your _out directory
-cd ~/talos-cluster  # Or wherever you stored your configs
-
-# Apply config using temporary DHCP IP
-talosctl apply-config --insecure \
-  --nodes 10.10.5.156 \
-  --file _out/controlplane.yaml
-```
-
-**What happens:**
-- Talos installs to disk
-- VM reboots
-- VM requests new DHCP IP
-
-**5. Reserve Static IP in Router**
-
-In your router/DHCP server, reserve the MAC address to IP:
-- MAC: (get from Proxmox VM → Hardware → Network Device)
-- IP: `10.10.5.206`
-
-Or wait for DHCP to assign an IP and then reserve it.
-
-**6. Update Talosctl Endpoints**
-```bash
-# Add the new control plane to endpoints
-talosctl config endpoint 10.10.5.200 10.10.5.201 10.10.5.202 10.10.5.206
-```
-
-**7. Verify Node Joined**
-```bash
-# Check nodes (wait 2-3 minutes)
-kubectl get nodes
-
-# Should show:
-# NAME              STATUS   ROLES           AGE
-# talos-cp-01       Ready    control-plane   2d
-# talos-cp-02       Ready    control-plane   2d
-# talos-cp-03       Ready    control-plane   2d
-# talos-cp-04       Ready    control-plane   1m    ← New node!
-
-# Check etcd members (should show 4)
-talosctl etcd members --nodes 10.10.5.200
-
-# Expected output:
-# NODE           MEMBER         HOSTNAME        PEER URLS
-# 10.10.5.200    talos-cp-01    talos-cp-01     https://10.10.5.200:2380
-# 10.10.5.200    talos-cp-02    talos-cp-02     https://10.10.5.201:2380
-# 10.10.5.200    talos-cp-03    talos-cp-03     https://10.10.5.202:2380
-# 10.10.5.200    talos-cp-04    talos-cp-04     https://10.10.5.206:2380  ← New!
-```
-
-**8. Verify etcd Health**
-```bash
-talosctl health --nodes 10.10.5.200,10.10.5.201,10.10.5.202,10.10.5.206
-
-# All checks should pass
-```
-
-**That's it! Your 4th control plane node is now part of the cluster.**
+> **Cluster:** `talos-proxmox-cluster`
+> **Endpoint:** `https://10.10.5.100:6443`
+> **Platform:** XCP-ng | **Disk:** `/dev/xvda` | **Interface:** `enX0` | **MTU:** `9000`
+> **Talos:** `v1.12.2` | **Kubernetes:** `v1.34.1`
 
 ---
 
-#### Adding a Worker Node
+## ⚠️ SAVE YOUR `secrets.yaml` FILE
 
-**When to add:**
-- Need more capacity for workloads
-- Experiencing resource constraints
-- Want better workload distribution
-
-**Step-by-Step Process:**
-
-**1. Create the VM in Proxmox**
-
-Via Web UI:
-- Click **Create VM**
-- VM ID: `105` (next available)
-- Name: `talos-worker-03`
-- OS: Select `metal-amd64.iso`
-- CPU: 4 cores, type `host`
-- Memory: 8192 MB (8GB)
-- Disk: 64 GB
-- Network: Bridge `vmbr0`, Model `VirtIO`
-- Finish (don't start yet)
-
-Via CLI:
-```bash
-# SSH to Proxmox
-ssh root@proxmox.local
-
-# Create the VM
-qm create 105 \
-  --name "talos-worker-03" \
-  --memory 8192 \
-  --cores 4 \
-  --cpu host \
-  --net0 virtio,bridge=vmbr0 \
-  --scsihw virtio-scsi-pci \
-  --scsi0 local-lvm:64 \
-  --ide2 local:iso/metal-amd64.iso,media=cdrom \
-  --boot order=scsi0 \
-  --ostype l26
-```
-
-**2. Start the VM**
-```bash
-# Via CLI
-qm start 105
-
-# Or via Web UI: Select VM → Start
-```
-
-**3. Wait for Maintenance Mode**
-
-Watch the console until you see:
-```
-[talos] task starting {"component":"controller-runtime","task":"network-setup"}
-[talos] acquired IP address {"component":"controller-runtime","address":"10.10.5.157/24"}
-```
-
-Note the temporary DHCP IP (example: `10.10.5.157`)
-
-**4. Apply the SAME worker.yaml**
-```bash
-# Use the ORIGINAL worker.yaml from your _out directory
-cd ~/talos-cluster  # Or wherever you stored your configs
-
-# Apply config using temporary DHCP IP
-talosctl apply-config --insecure \
-  --nodes 10.10.5.157 \
-  --file _out/worker.yaml
-```
-
-**What happens:**
-- Talos installs to disk
-- VM reboots
-- VM requests new DHCP IP
-- Node joins the cluster automatically
-
-**5. Reserve Static IP in Router**
-
-In your router/DHCP server, reserve the MAC address to IP:
-- MAC: (get from Proxmox VM → Hardware → Network Device)
-- IP: `10.10.5.205`
-
-Or wait for DHCP to assign an IP and then reserve it.
-
-**6. Verify Node Joined**
-```bash
-# Check nodes (wait 2-3 minutes)
-kubectl get nodes
-
-# Should show:
-# NAME              STATUS   ROLES           AGE
-# talos-cp-01       Ready    control-plane   2d
-# talos-cp-02       Ready    control-plane   2d
-# talos-cp-03       Ready    control-plane   2d
-# talos-worker-01   Ready    <none>          2d
-# talos-worker-02   Ready    <none>          2d
-# talos-worker-03   Ready    <none>          1m    ← New node!
-
-# Check node details
-kubectl describe node talos-worker-03
-
-# Verify it can schedule pods
-kubectl get nodes -o wide
-```
-
-**7. Test Workload Scheduling**
-```bash
-# Run a test pod
-kubectl run test-nginx --image=nginx --replicas=1
-
-# Check where it scheduled
-kubectl get pods -o wide
-
-# Should show running on one of the worker nodes
-
-# Clean up
-kubectl delete pod test-nginx
-```
-
-**That's it! Your 3rd worker node is now part of the cluster and ready to accept workloads.**
+> **Without `secrets.yaml`, you CANNOT generate new node configs.**
+>
+> The `talosctl gen config` command **requires** this file. No secrets file = no new nodes.
+>
+> This file contains every certificate, token, and encryption secret that ties nodes to your cluster. If you lose it, you're stuck manually extracting certs from running nodes, decoding escaped YAML, stripping incompatible Kubernetes objects, and debugging certificate parsing errors — **a process that can take hours.**
+>
+> **Save it. Back it up. Do not lose it.**
+>
+> Store it in at least two places: password manager, encrypted USB, private git repo — pick two or more.
+>
+> If you lose it while you still have a running control plane, you can recover it (see the last section), but that process is painful and should be a **last resort**, not the plan.
 
 ---
 
-#### Adding Multiple Nodes at Once
+## Step 1 — Generate a Config
 
-You can add multiple nodes simultaneously:
+Every command below **requires** `--with-secrets secrets.yaml`. Without it, Talos generates configs with **new random secrets** that won't match your cluster.
 
-**Example: Adding 2 workers and 1 control plane**
+**Worker node:**
+
 ```bash
-# Create all VMs first
-qm create 105 --name "talos-worker-03" --memory 8192 --cores 4 --cpu host \
-  --net0 virtio,bridge=vmbr0 --scsihw virtio-scsi-pci --scsi0 local-lvm:64 \
-  --ide2 local:iso/metal-amd64.iso,media=cdrom --boot order=scsi0 --ostype l26
+talosctl gen config talos-proxmox-cluster https://10.10.5.100:6443 \
+  --with-secrets secrets.yaml \
+  --output-types worker \
+  --output worker.yaml
+```
 
-qm create 106 --name "talos-worker-04" --memory 8192 --cores 4 --cpu host \
-  --net0 virtio,bridge=vmbr0 --scsihw virtio-scsi-pci --scsi0 local-lvm:64 \
-  --ide2 local:iso/metal-amd64.iso,media=cdrom --boot order=scsi0 --ostype l26
+**Control plane node:**
 
-qm create 107 --name "talos-cp-04" --memory 4096 --cores 2 --cpu host \
-  --net0 virtio,bridge=vmbr0 --scsihw virtio-scsi-pci --scsi0 local-lvm:32 \
-  --ide2 local:iso/metal-amd64.iso,media=cdrom --boot order=scsi0 --ostype l26
+```bash
+talosctl gen config talos-proxmox-cluster https://10.10.5.100:6443 \
+  --with-secrets secrets.yaml \
+  --output-types controlplane \
+  --output controlplane.yaml
+```
 
-# Start all at once
-for i in {105..107}; do qm start $i; done
+**Both at once:**
 
-# Wait for all to reach maintenance mode
-# Get their temp IPs from consoles
+```bash
+talosctl gen config talos-proxmox-cluster https://10.10.5.100:6443 \
+  --with-secrets secrets.yaml
+```
 
-# Apply configs (use appropriate temp IPs)
-talosctl apply-config --insecure --nodes 10.10.5.157 --file _out/worker.yaml
-talosctl apply-config --insecure --nodes 10.10.5.158 --file _out/worker.yaml
-talosctl apply-config --insecure --nodes 10.10.5.159 --file _out/controlplane.yaml
+This creates `controlplane.yaml`, `worker.yaml`, and `talosconfig` in the current directory.
 
-# Reserve IPs in router
-# Update talosctl endpoints if added control plane
-# Verify all joined
+---
+
+## Step 2 — Customize the Config
+
+The generated config uses generic defaults. At minimum, you **must** change the install disk or the install will fail.
+
+### Install disk (required)
+
+```yaml
+machine:
+  install:
+    disk: /dev/xvda
+```
+
+### Installer image version (required)
+
+Match the version running on your cluster:
+
+```yaml
+machine:
+  install:
+    image: ghcr.io/siderolabs/installer:v1.12.2
+```
+
+> **Tip:** Check your cluster version with `talosctl -n 10.10.5.100 version`
+
+### Network (optional — can patch later)
+
+```yaml
+machine:
+  network:
+    hostname: talos-worker-xo-2
+    interfaces:
+      - interface: enX0
+        mtu: 9000
+        dhcp: true
+```
+
+### Extensions (optional — if needed for GPU, etc.)
+
+```yaml
+machine:
+  install:
+    extensions:
+      - image: ghcr.io/siderolabs/nvidia-container-toolkit:...
+```
+
+---
+
+## Step 3 — Boot and Apply
+
+**1.** Create a VM in XCP-ng and boot from the Talos ISO. It will enter maintenance mode and grab a DHCP address.
+
+**2.** Apply the config:
+
+```bash
+talosctl apply-config --insecure --nodes <new-node-ip> --file worker.yaml
+```
+
+> The `--insecure` flag is required because the node isn't part of the cluster yet.
+
+**3.** Wait for it to join, then verify:
+
+```bash
 kubectl get nodes
 ```
 
 ---
 
-#### Replacing a Failed Node
+## Troubleshooting
 
-**If a control plane or worker node fails permanently:**
+**Node stuck booting from a bad config?**
 
-**1. Remove the old node from the cluster**
+Reset it back to maintenance mode, fix your config, and re-apply:
+
 ```bash
-# Drain the node (if it's still responding)
-kubectl drain talos-worker-02 --ignore-daemonsets --delete-emptydir-data
-
-# Delete from Kubernetes
-kubectl delete node talos-worker-02
-
-# If it was a control plane, remove from etcd
-talosctl etcd remove-member talos-cp-02 --nodes 10.10.5.200
-
-# Delete the VM in Proxmox
-qm stop 104
-qm destroy 104
+talosctl reset --insecure --nodes <node-ip> --graceful=false
 ```
 
-**2. Create a new VM with the SAME VM ID and name**
+**Old node still showing in Kubernetes?**
+
 ```bash
-# Recreate with same ID and name
-qm create 104 \
-  --name "talos-worker-02" \
-  --memory 8192 \
-  --cores 4 \
-  --cpu host \
-  --net0 virtio,bridge=vmbr0 \
-  --scsihw virtio-scsi-pci \
-  --scsi0 local-lvm:64 \
-  --ide2 local:iso/metal-amd64.iso,media=cdrom \
-  --boot order=scsi0 \
-  --ostype l26
-
-qm start 104
-```
-
-**3. Apply the same config and reserve same IP**
-```bash
-# Apply worker.yaml (or controlplane.yaml)
-talosctl apply-config --insecure \
-  --nodes <temp-ip> \
-  --file _out/worker.yaml
-
-# Reserve the SAME IP it had before (10.10.5.204)
-```
-
-**4. Verify replacement**
-```bash
-kubectl get nodes
-# Should show the new node with the same name
+kubectl delete node <old-node-name>
 ```
 
 ---
 
-#### Important Notes
+## Quick Reference
 
-**About Configuration Files:**
-
-✅ **Always use the ORIGINAL config files** from your initial cluster setup
-- Don't generate new configs with `talosctl gen config`
-- The original `controlplane.yaml` and `worker.yaml` contain the cluster secrets
-- Generating new configs creates a new cluster identity (won't join existing cluster)
-
-**About Node Identity:**
-
-- Each node automatically gets a unique identity when the config is applied
-- You don't need to modify the config for each node
-- Hostnames are auto-generated (or you can use config patches for custom names)
-
-**About DHCP vs Static IPs:**
-
-- Using DHCP with reservations is the easiest approach
-- Reserve by MAC address in your router/DHCP server
-- Alternatively, use config patches for inline static IPs (more complex)
-
-**About etcd Quorum:**
-
-| Control Planes | Quorum Required | Failures Tolerated |
-|----------------|-----------------|-------------------|
-| 1              | 1               | 0                 |
-| 2              | 2               | 0 (not HA)        |
-| 3              | 2               | 1 ✅ Recommended   |
-| 4              | 3               | 1                 |
-| 5              | 3               | 2 ✅ Production    |
-
-- 3 control planes = tolerate 1 failure (ideal for homelab)
-- 5 control planes = tolerate 2 failures (ideal for production)
-- 4 or 6 control planes = no additional fault tolerance (avoid)
-
-**About Worker Nodes:**
-
-- Add as many as you need for capacity
-- No quorum concerns (unlike control planes)
-- Common homelab setups: 2-4 workers
+| Task | Command |
+|---|---|
+| Generate worker config | `talosctl gen config talos-proxmox-cluster https://10.10.5.100:6443 --with-secrets secrets.yaml --output-types worker --output worker.yaml` |
+| Generate CP config | `talosctl gen config talos-proxmox-cluster https://10.10.5.100:6443 --with-secrets secrets.yaml --output-types controlplane --output controlplane.yaml` |
+| Apply config to new node | `talosctl apply-config --insecure --nodes <ip> --file <config>.yaml` |
+| Reset a stuck node | `talosctl reset --insecure --nodes <ip> --graceful=false` |
+| Check cluster nodes | `kubectl get nodes` |
+| Remove stale node | `kubectl delete node <name>` |
 
 ---
 
-#### Quick Reference Commands
+## Last Resort — Recovering `secrets.yaml`
 
-**Add Control Plane Node:**
+> **You should never need this section if you saved your `secrets.yaml`.** This process is fragile and error-prone. It exists only as an emergency fallback.
+
+The machine config from `talosctl get mc` comes back as a double-escaped string with embedded Kubernetes objects that crash the parser. The python script below handles both issues.
+
+**Step 1 — Extract and clean the control plane config:**
+
 ```bash
-# Create VM (ID 106, 2 CPU, 4GB RAM, 32GB disk)
-qm create 106 --name "talos-cp-04" --memory 4096 --cores 2 --cpu host \
-  --net0 virtio,bridge=vmbr0 --scsihw virtio-scsi-pci --scsi0 local-lvm:32 \
-  --ide2 local:iso/metal-amd64.iso,media=cdrom --boot order=scsi0 --ostype l26
-qm start 106
-
-# Apply config (use temp DHCP IP)
-talosctl apply-config --insecure --nodes <temp-ip> --file _out/controlplane.yaml
-
-# Update endpoints
-talosctl config endpoint 10.10.5.200 10.10.5.201 10.10.5.202 10.10.5.206
-
-# Verify
-kubectl get nodes
-talosctl etcd members
+talosctl -n 10.10.5.100 get mc v1alpha1 -o json | python3 -c "
+import sys, json, yaml
+data = json.loads(sys.stdin.read())
+spec = data['spec']
+config = yaml.safe_load(spec)
+if isinstance(config, str):
+    config = yaml.safe_load(config)
+if 'apiServer' in config.get('cluster', {}):
+    config['cluster']['apiServer'].pop('auditPolicy', None)
+    config['cluster']['apiServer'].pop('admissionControl', None)
+print(yaml.dump(config, default_flow_style=False, width=10000))
+" > controlplane-clean.yaml
 ```
 
-**Add Worker Node:**
+**Step 2 — Generate secrets from the cleaned config:**
+
 ```bash
-# Create VM (ID 105, 4 CPU, 8GB RAM, 64GB disk)
-qm create 105 --name "talos-worker-03" --memory 8192 --cores 4 --cpu host \
-  --net0 virtio,bridge=vmbr0 --scsihw virtio-scsi-pci --scsi0 local-lvm:64 \
-  --ide2 local:iso/metal-amd64.iso,media=cdrom --boot order=scsi0 --ostype l26
-qm start 105
-
-# Apply config (use temp DHCP IP)
-talosctl apply-config --insecure --nodes <temp-ip> --file _out/worker.yaml
-
-# Verify
-kubectl get nodes
+talosctl gen secrets --from-controlplane-config controlplane-clean.yaml -o secrets.yaml
 ```
 
-**Remove Node:**
-```bash
-# Drain (if still accessible)
-kubectl drain <node-name> --ignore-daemonsets --delete-emptydir-data
-
-# Delete from Kubernetes
-kubectl delete node <node-name>
-
-# If control plane, remove from etcd
-talosctl etcd remove-member <member-name> --nodes 10.10.5.200
-
-# Stop and destroy VM
-qm stop <vmid>
-qm destroy <vmid>
-```
-
----
+**Step 3 — Save it this time.**
