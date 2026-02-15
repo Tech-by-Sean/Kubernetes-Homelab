@@ -66,7 +66,21 @@ Talos is a minimal, RAM-based OS designed for Kubernetes. It has no `apt`, `yum`
 
 ---
 
-### Layer 3: The Orchestration Layer (Kubernetes)
+### Layer 3: The Nouveau Driver Conflict
+
+**Root Cause**: The open-source `nouveau` driver auto-loads and claims the GPU before the proprietary NVIDIA driver can initialize.
+
+Linux kernels include the `nouveau` driver by default. When Talos boots, the kernel detects the NVIDIA GPU and automatically loads `nouveau`, which then locks the hardware. This prevents the proprietary NVIDIA driver from binding to the device.
+
+**Symptom**:
+- `lspci` shows the GPU
+- `dmesg` shows: `nouveau 0000:01:00.0: enabling device`
+- NVIDIA driver fails with: `nvidia: probe of 0000:01:00.0 failed with error -16` (device busy)
+- `/dev/nvidia*` nodes do not exist
+
+---
+
+### Layer 4: The Orchestration Layer (Kubernetes)
 
 **Root Cause**: Namespace isolation and lack of device awareness.
 
@@ -79,7 +93,7 @@ Standard Kubernetes runtimes are designed for CPU/memory abstraction. They don't
 
 ---
 
-### Layer 4: The Library Layer (GLIBC Version Mismatch)
+### Layer 5: The Library Layer (GLIBC Version Mismatch)
 
 **Root Cause**: Incompatible shared library versions between host and container.
 
@@ -187,11 +201,11 @@ talosctl -n <NODE_IP> get /proc/driver/nvidia/gpus/0000:01:00.0/information
 
 ---
 
-### Step 2: Talos Image with NVIDIA Extensions
+### Step 2: Talos Image with NVIDIA Extensions and Kernel Arguments
 
-The NVIDIA driver **must** be baked into the Talos OS image. You cannot install it afterward.
+The NVIDIA driver **must** be baked into the Talos OS image, and critical kernel arguments must be configured to prevent driver conflicts.
 
-#### 2.1: Generate Custom Talos Image
+#### 2.1: Generate Custom Talos Image with Extensions
 
 Visit the [Talos Image Factory](https://factory.talos.dev/) or use the CLI:
 ```bash
@@ -203,8 +217,8 @@ cat <<EOF > schematic.yaml
 customization:
   systemExtensions:
     officialExtensions:
-      - siderolabs/nonfree-kmod-nvidia
-      - siderolabs/nvidia-container-toolkit
+      - siderolabs/nonfree-kmod-nvidia-production
+      - siderolabs/nvidia-container-toolkit-production
 EOF
 
 # Generate the image URL (use your Talos version)
@@ -214,12 +228,48 @@ curl -X POST --data-binary @schematic.yaml \
 # Returns a schematic ID, e.g., 376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba
 ```
 
+**Note**: The `-production` suffixes ensure you receive stable, tested driver versions. For bleeding-edge drivers, you can use the non-production variants (`nonfree-kmod-nvidia`, `nvidia-container-toolkit`), but this is not recommended for production deployments.
+
 Your image URL will be:
 ```
 factory.talos.dev/installer/<SCHEMATIC_ID>:v1.8.3
 ```
 
-#### 2.2: Upgrade Talos Node
+#### 2.2: Configure Critical Kernel Arguments
+
+**⚠️ CRITICAL FOR XCP-NG**: You must add kernel arguments to prevent the nouveau driver from claiming the GPU and to enable proper PCI passthrough under Xen.
+
+**Using the Talos Image Factory (Web UI)**:
+
+1. In the **"Extra Kernel Arguments"** section, add:
+```
+   nouveau.modeset=0 nvidia-drm.modeset=1 pci=realloc
+```
+
+2. **Explanation of each argument**:
+   - `nouveau.modeset=0` - Disables the open-source nouveau driver (prevents conflict)
+   - `nvidia-drm.modeset=1` - Enables NVIDIA Direct Rendering Manager
+   - `pci=realloc` - Forces PCI resource reallocation (required for Xen hypervisors)
+
+**Using Machine Config (CLI Method)**:
+
+If applying via machine config instead:
+```yaml
+# machine-config.yaml
+machine:
+  install:
+    extraKernelArgs:
+      - nouveau.modeset=0
+      - nvidia-drm.modeset=1
+      - pci=realloc
+```
+
+Apply with:
+```bash
+talosctl apply-config --file machine-config.yaml -n <NODE_IP>
+```
+
+#### 2.3: Upgrade Talos Node
 ```bash
 talosctl -n <NODE_IP> upgrade \
   --image factory.talos.dev/installer/<YOUR_SCHEMATIC_ID>:v1.8.3 \
@@ -228,7 +278,26 @@ talosctl -n <NODE_IP> upgrade \
 
 **Wait for reboot** (~5 minutes).
 
-**Validation**:
+#### 2.4: ⚠️ Expected Behavior: "Black Screen" After Reboot
+
+**IMPORTANT**: After applying these kernel arguments and rebooting:
+
+- ❌ The **XCP-ng console** will appear frozen or show a black screen
+- ✅ **This is normal** - the GPU is being handed to the NVIDIA driver and is no longer rendering the text console
+- ✅ The VM is **still running** - verify via SSH or talosctl
+
+**Do not panic.** Verify the VM is healthy:
+```bash
+# Should respond normally
+talosctl -n <NODE_IP> version
+
+# Should show the node
+kubectl get nodes
+```
+
+**Trust your SSH/talosctl connection instead of the graphical console.**
+
+#### 2.5: Validation
 ```bash
 # Check for NVIDIA device nodes
 talosctl -n <NODE_IP> ls /dev | grep nvidia
@@ -248,6 +317,18 @@ talosctl -n <NODE_IP> read /proc/modules | grep nvidia
 ```
 
 **Expected**: Multiple `nvidia` modules listed.
+```bash
+# Verify nouveau is NOT loaded
+talosctl -n <NODE_IP> read /proc/modules | grep nouveau
+```
+
+**Expected**: No output (nouveau should be disabled).
+```bash
+# Verify kernel arguments are active
+talosctl -n <NODE_IP> read /proc/cmdline
+```
+
+**Expected**: Should contain `nouveau.modeset=0 nvidia-drm.modeset=1 pci=realloc`
 
 ---
 
@@ -495,7 +576,10 @@ kubectl exec -n media deployment/jellyfin -- watch nvidia-smi
 
 **Solution**:
 1. Verify RuntimeClass exists: `kubectl get runtimeclass nvidia`
-2. Verify Talos has nvidia-container-toolkit extension
+2. Verify Talos has nvidia-container-toolkit extension:
+```bash
+   talosctl -n <NODE_IP> read /proc/modules | grep nvidia
+```
 3. Restart the pod
 
 ---
@@ -525,6 +609,40 @@ kubectl exec -n media deployment/jellyfin -- watch nvidia-smi
 
 ---
 
+### Problem: NVIDIA Driver Fails to Bind (`probe failed with error -16` - Device Busy)
+
+**Cause**: The `nouveau` driver loaded before the proprietary NVIDIA driver and claimed the GPU.
+
+**Symptoms**:
+```bash
+talosctl -n <NODE_IP> dmesg | grep nouveau
+# Shows: nouveau 0000:01:00.0: enabling device
+```
+
+**Solution**:
+
+1. Verify kernel arguments include `nouveau.modeset=0`:
+```bash
+   talosctl -n <NODE_IP> read /proc/cmdline
+```
+   Should contain: `nouveau.modeset=0`
+
+2. If missing, regenerate Talos image with kernel arguments (see Step 2.2) and re-upgrade.
+
+3. After reboot, verify nouveau is disabled:
+```bash
+   talosctl -n <NODE_IP> read /proc/modules | grep nouveau
+   # Should return nothing
+```
+
+4. Verify NVIDIA driver loaded successfully:
+```bash
+   talosctl -n <NODE_IP> dmesg | grep -i nvidia
+   # Should show: NVRM: loading NVIDIA UNIX x86_64 Kernel Module
+```
+
+---
+
 ### Problem: GPU Shows 0% Utilization During Transcode
 
 **Cause**: Jellyfin is using CPU transcoding (hardware acceleration disabled).
@@ -533,6 +651,8 @@ kubectl exec -n media deployment/jellyfin -- watch nvidia-smi
 1. Check Jellyfin Dashboard → Playback settings
 2. Verify `NVIDIA_DRIVER_CAPABILITIES` includes `video`
 3. Check logs: `kubectl logs -n media deployment/jellyfin | grep -i nvenc`
+
+**Expected in logs**: `Stream mapping:` should show `h264_nvenc` or `hevc_nvenc`
 
 ---
 
@@ -562,6 +682,25 @@ kubectl exec -n media deployment/jellyfin -- watch nvidia-smi
    /opt/xensource/libexec/xen-cmdline --set-dom0 "xen-pciback.hide=(01:00.0)(01:00.1)"
    reboot
 ```
+
+---
+
+### Problem: XCP-ng Console Shows Black Screen After Kernel Args
+
+**Cause**: GPU is now controlled by NVIDIA driver, not used for console rendering.
+
+**This is expected behavior.** The kernel arguments (`nvidia-drm.modeset=1`) hand control of the GPU to the NVIDIA driver, which means the XCP-ng text console can no longer use it for display.
+
+**Verify the VM is healthy via**:
+```bash
+# Should respond normally
+talosctl -n <NODE_IP> version
+
+# Should show healthy node
+kubectl get nodes
+```
+
+**Do not** attempt to "fix" this by removing kernel arguments - the black screen means GPU passthrough is working correctly.
 
 ---
 
@@ -633,13 +772,49 @@ The NVIDIA driver performs a **PCI topology check** during initialization:
 
 ---
 
+### The Nouveau Conflict
+
+**Why must we disable nouveau?**
+
+The Linux kernel includes the open-source `nouveau` driver by default. During boot:
+
+1. Kernel detects NVIDIA GPU via PCI enumeration
+2. `nouveau` driver claims the device first (it's built into the kernel)
+3. Hardware becomes "locked" to nouveau
+4. Proprietary NVIDIA driver cannot bind (error -16: device busy)
+
+**The kernel argument `nouveau.modeset=0`**:
+- Tells the kernel to skip loading nouveau
+- Leaves the GPU unclaimed
+- Allows the NVIDIA driver to bind successfully
+
+---
+
+### The PCI Reallocation Requirement
+
+**Why is `pci=realloc` needed for XCP-ng?**
+
+Xen-based hypervisors (like XCP-ng) use a different PCI resource allocation model than bare-metal Linux:
+
+1. XCP-ng assigns PCI resources in Dom0 at boot
+2. When a device is passed through to a VM, the guest kernel expects to manage resources
+3. Without `pci=realloc`, the guest kernel uses Dom0's allocation
+4. This causes address conflicts and initialization failures
+
+**The kernel argument `pci=realloc`**:
+- Forces the guest kernel to recalculate PCI memory regions
+- Prevents conflicts with the hypervisor's allocation
+- Required for GPU passthrough under Xen/XCP-ng
+
+---
+
 ## Conclusion
 
-You've successfully bridged four layers of abstraction to achieve GPU-accelerated transcoding in a fully virtualized Kubernetes environment. This configuration is production-ready and will survive:
+You've successfully bridged **five layers of abstraction** to achieve GPU-accelerated transcoding in a fully virtualized Kubernetes environment. This configuration is production-ready and will survive:
 
 - ✅ Pod restarts
 - ✅ Node reboots
-- ✅ Talos upgrades (as long as extensions are maintained)
+- ✅ Talos upgrades (as long as extensions and kernel args are maintained)
 - ✅ Kubernetes version upgrades
 
 **Final Validation Command**:
@@ -666,8 +841,10 @@ xe vm-reboot uuid=<VM_UUID>
 talosctl -n <NODE_IP> dmesg | grep -i nvidia
 talosctl -n <NODE_IP> ls /dev | grep nvidia
 talosctl -n <NODE_IP> read /proc/modules | grep nvidia
+talosctl -n <NODE_IP> read /proc/modules | grep nouveau  # Should be empty
+talosctl -n <NODE_IP> read /proc/cmdline  # Verify kernel args
 
-# Talos Upgrade
+# Talos Upgrade (with extensions and kernel args)
 talosctl -n <NODE_IP> upgrade \
   --image factory.talos.dev/installer/<SCHEMATIC_ID>:v1.8.3 \
   --preserve
@@ -686,7 +863,25 @@ kubectl logs -n media deployment/jellyfin | grep -i nvenc
 
 ---
 
-**Document Version**: 1.0  
+## Appendix: Kernel Arguments Explained
+
+| Argument | Purpose | Required For |
+|----------|---------|--------------|
+| `nouveau.modeset=0` | Disables open-source nouveau driver | All NVIDIA GPU passthrough |
+| `nvidia-drm.modeset=1` | Enables NVIDIA Direct Rendering Manager | Container GPU access |
+| `pci=realloc` | Forces PCI resource reallocation | Xen/XCP-ng hypervisors |
+
+**All three arguments are mandatory for GPU passthrough on XCP-ng.**
+
+---
+
+**Document Version**: 2.0 (Final Unified Edition)  
 **Last Updated**: February 2026  
 **Tested On**: XCP-ng 8.3, Talos Linux 1.8.3, Kubernetes 1.31  
 **Hardware**: NVIDIA Quadro P1000 (GP107GL)
+
+---
+
+## Credits
+
+This guide represents the culmination of extensive troubleshooting across hypervisor, operating system, and orchestration layers. Special thanks to the Talos Linux community and the homelab community for their invaluable insights into GPU passthrough in virtualized environments.
