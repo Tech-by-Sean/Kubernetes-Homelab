@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nvidia-runtime-installer
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: nvidia-runtime-installer
+  template:
+    metadata:
+      labels:
+        name: nvidia-runtime-installer
+    spec:
+      hostPID: true
+      containers:
+      - name: installer
+        image: alpine
+        command:
+        - sh
+        - -c
+        args:
+        - |
+          echo '[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nvidia]
+            runtime_type = "io.containerd.runc.v2"
+            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nvidia.options]
+              BinaryName = "/usr/local/bin/nvidia-container-runtime"' > /host/etc/cri/conf.d/20-nvidia.part;
+          echo "Config written. Restarting CRI...";
+          nsenter -t 1 -m -u -n -i -- systemctl restart cri || echo "Standard systemctl failed, trying Talos internal...";
+          # This is the secret sauce for Talos:
+          sleep infinity
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: host-etc
+          mountPath: /host/etc
+      volumes:
+      - name: host-etc
+        hostPath:
+          path: /etc
