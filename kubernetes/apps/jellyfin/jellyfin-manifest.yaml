@@ -13,8 +13,12 @@ spec:
       labels:
         app: jellyfin
     spec:
-      # This bridge connects the Pod to the custom containerd runtime
+      # This connects the pod to the patched containerd runtime
       runtimeClassName: nvidia 
+      # Ensures the pod has the correct permissions for NFS and hardware
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: "OnRootMismatch"
       containers:
         - name: jellyfin
           image: linuxserver/jellyfin:latest
@@ -29,7 +33,10 @@ spec:
               value: "all"
             - name: NVIDIA_DRIVER_CAPABILITIES
               value: "all"
-            # Crucial for Talos: Forces the app to find the mounted drivers
+            # FIX: Tells Jellyfin exactly where its transcoding engine is
+            - name: JELLYFIN_FFmpeg__path
+              value: "/usr/lib/jellyfin-ffmpeg/ffmpeg"
+            # FIX: Points FFmpeg to the NVIDIA libraries we are mounting from Talos
             - name: LD_LIBRARY_PATH
               value: "/usr/lib/x86_64-linux-gnu/nvidia"
           ports:
@@ -42,18 +49,21 @@ spec:
               mountPath: /media/movies
             - name: shows
               mountPath: /media/shows
-            # The "Surgical Mount": maps host drivers into the container
+            # The "Surgical Mount": Maps Talos drivers into the container
             - name: nvidia-libs
               mountPath: /usr/lib/x86_64-linux-gnu/nvidia
               readOnly: true
+            # Required for HDR Tone Mapping on the P1000
+            - name: render-node
+              mountPath: /dev/dri/renderD128
           resources:
             limits:
               nvidia.com/gpu: 1
-              cpu: "2000m"
+              cpu: "4000m" # Increased for 4K handling
               memory: "8Gi"
             requests:
               nvidia.com/gpu: 1
-              cpu: "500m"
+              cpu: "1000m"
               memory: "2Gi"
       volumes:
         - name: config
@@ -69,6 +79,10 @@ spec:
         - name: nvidia-libs
           hostPath:
             path: /usr/local/glibc/usr/lib
+        # Maps the actual GPU hardware node
+        - name: render-node
+          hostPath:
+            path: /dev/dri/renderD128
 ---
 apiVersion: v1
 kind: Service
