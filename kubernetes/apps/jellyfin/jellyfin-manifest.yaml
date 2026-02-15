@@ -13,15 +13,16 @@ spec:
       labels:
         app: jellyfin
     spec:
-      # Use the runtime bridge we configured—this handles library injection safely
-      runtimeClassName: nvidia 
-      # Fixes permissions for NFS storage access
+      runtimeClassName: nvidia
       securityContext:
         fsGroup: 1000
         fsGroupChangePolicy: "OnRootMismatch"
       containers:
         - name: jellyfin
           image: linuxserver/jellyfin:latest
+          # CRITICAL: This allows access to GPU devices properly
+          securityContext:
+            privileged: true
           env:
             - name: PUID
               value: "1000"
@@ -31,12 +32,8 @@ spec:
               value: "America/New_York"
             - name: NVIDIA_VISIBLE_DEVICES
               value: "all"
-            # Setting to all ensures NVENC and NVDEC are both active
             - name: NVIDIA_DRIVER_CAPABILITIES
-              value: "all"
-            # Standard path where the NVIDIA Toolkit injects libraries
-            - name: LD_LIBRARY_PATH
-              value: "/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
+              value: "compute,video,utility"
           ports:
             - containerPort: 8096
               name: http
@@ -47,9 +44,10 @@ spec:
               mountPath: /media/movies
             - name: shows
               mountPath: /media/shows
-            # Required for OpenCL/HDR Tone Mapping on your P1000
-            - name: render-node
-              mountPath: /dev/dri/renderD128
+            # Proper way to expose /dev/dri for tone mapping
+            - name: dri
+              mountPath: /dev/dri
+              readOnly: false
           resources:
             limits:
               nvidia.com/gpu: 1
@@ -69,10 +67,11 @@ spec:
         - name: shows
           persistentVolumeClaim:
             claimName: jellyfin-shows
-        # Direct hardware access to the GPU render node
-        - name: render-node
+        # Mount entire /dev/dri directory for hardware acceleration
+        - name: dri
           hostPath:
-            path: /dev/dri/renderD128
+            path: /dev/dri
+            type: Directory
 ---
 apiVersion: v1
 kind: Service
