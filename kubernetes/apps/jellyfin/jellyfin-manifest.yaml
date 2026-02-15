@@ -13,9 +13,9 @@ spec:
       labels:
         app: jellyfin
     spec:
-      # This connects the pod to the patched containerd runtime
+      # Use the runtime bridge we configured—this handles library injection safely
       runtimeClassName: nvidia 
-      # Ensures the pod has the correct permissions for NFS and hardware
+      # Fixes permissions for NFS storage access
       securityContext:
         fsGroup: 1000
         fsGroupChangePolicy: "OnRootMismatch"
@@ -31,14 +31,12 @@ spec:
               value: "America/New_York"
             - name: NVIDIA_VISIBLE_DEVICES
               value: "all"
+            # Setting to all ensures NVENC and NVDEC are both active
             - name: NVIDIA_DRIVER_CAPABILITIES
               value: "all"
-            # FIX: Tells Jellyfin exactly where its transcoding engine is
-            - name: JELLYFIN_FFmpeg__path
-              value: "/usr/lib/jellyfin-ffmpeg/ffmpeg"
-            # FIX: Points FFmpeg to the NVIDIA libraries we are mounting from Talos
+            # Standard path where the NVIDIA Toolkit injects libraries
             - name: LD_LIBRARY_PATH
-              value: "/usr/lib/x86_64-linux-gnu/nvidia"
+              value: "/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
           ports:
             - containerPort: 8096
               name: http
@@ -49,17 +47,13 @@ spec:
               mountPath: /media/movies
             - name: shows
               mountPath: /media/shows
-            # The "Surgical Mount": Maps Talos drivers into the container
-            - name: nvidia-libs
-              mountPath: /usr/lib/x86_64-linux-gnu/nvidia
-              readOnly: true
-            # Required for HDR Tone Mapping on the P1000
+            # Required for OpenCL/HDR Tone Mapping on your P1000
             - name: render-node
               mountPath: /dev/dri/renderD128
           resources:
             limits:
               nvidia.com/gpu: 1
-              cpu: "4000m" # Increased for 4K handling
+              cpu: "4000m"
               memory: "8Gi"
             requests:
               nvidia.com/gpu: 1
@@ -75,11 +69,7 @@ spec:
         - name: shows
           persistentVolumeClaim:
             claimName: jellyfin-shows
-        # This hostPath is standard for the Talos NVIDIA extension
-        - name: nvidia-libs
-          hostPath:
-            path: /usr/local/glibc/usr/lib
-        # Maps the actual GPU hardware node
+        # Direct hardware access to the GPU render node
         - name: render-node
           hostPath:
             path: /dev/dri/renderD128
