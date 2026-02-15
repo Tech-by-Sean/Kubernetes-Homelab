@@ -19,41 +19,48 @@ spec:
     metadata:
       labels:
         app: jellyfin
-    spec:
-  runtimeClassName: nvidia  # <--- This is the key that unlocks the P1000
-  containers:
-    - name: jellyfin
-      image: linuxserver/jellyfin:latest
-      env:
-        - name: PUID
-          value: "1000"
-        - name: PGID
-          value: "1000"
-        - name: TZ
-          value: "America/New_York"
-        - name: NVIDIA_VISIBLE_DEVICES
-          value: "all"
-        - name: NVIDIA_DRIVER_CAPABILITIES
-          value: "compute,video,utility"
-      ports:
-        - containerPort: 8096
-          name: http
-      volumeMounts:
+    spec: # <--- This is the Pod Spec
+      runtimeClassName: nvidia 
+      containers:
+        - name: jellyfin
+          image: linuxserver/jellyfin:latest
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/New_York"
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "all"
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "compute,video,utility"
+          ports:
+            - containerPort: 8096
+              name: http
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: movies
+              mountPath: /media/movies
+            - name: shows
+              mountPath: /media/shows
+          resources:
+            limits:
+              cpu: "2000m"
+              memory: "8Gi"
+              nvidia.com/gpu: 1
+            requests:
+              cpu: "500m"
+              memory: "2Gi"
+              nvidia.com/gpu: 1
+      volumes: # <--- Added these placeholders so the pod can actually start
         - name: config
-          mountPath: /config
+          emptyDir: {} # Change these to your actual PVCs or HostPaths
         - name: movies
-          mountPath: /media/movies
+          emptyDir: {}
         - name: shows
-          mountPath: /media/shows
-      resources:
-        limits:
-          cpu: "2000m"
-          memory: "8Gi"
-          nvidia.com/gpu: 1
-        requests:
-          cpu: "500m"
-          memory: "2Gi"
-          nvidia.com/gpu: 1
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -77,7 +84,7 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`jellyfin.servers.local`) || Host(`jellyfin.techbysean.com`)  # Fixed syntax
+    - match: Host(`jellyfin.servers.local`) || Host(`jellyfin.techbysean.com`)
       kind: Rule
       services:
         - name: jellyfin
