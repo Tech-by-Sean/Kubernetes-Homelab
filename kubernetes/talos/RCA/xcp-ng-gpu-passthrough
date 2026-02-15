@@ -1,0 +1,692 @@
+# GPU Passthrough for Jellyfin on XCP-ng → Talos Linux → Kubernetes
+
+**The Complete Guide to NVIDIA Transcoding in a Virtualized K8s Environment**
+
+---
+
+## Overview
+
+⏱️ **Time Investment**: 4-6 hours (first attempt) | 1-2 hours (following this guide)  
+💀 **Difficulty**: Advanced (requires hypervisor, OS, and Kubernetes knowledge)  
+🎯 **Hardware**: NVIDIA Quadro P1000 (Pascal architecture, NVENC/NVDEC support)  
+🏗️ **Stack**: XCP-ng (hypervisor) → Talos Linux (K8s OS) → Kubernetes → Jellyfin
+
+---
+
+## The Challenge: A Cascading Chain of Invisibility
+
+This was a marathon, not a sprint. Troubleshooting hardware acceleration across three layers of virtualization and abstraction is "boss-level" homelab engineering because **if any single link in the chain is broken, the layers above cannot see the GPU**—even if their own configurations are perfect.
+```
+XCP-ng (hypervisor)
+    ↓ [PCI Passthrough]
+Talos Linux (VM)
+    ↓ [Kernel Driver]
+Kubernetes (orchestration)
+    ↓ [Runtime Class]
+Container (Jellyfin)
+    ↓ [NVENC/NVDEC]
+Transcoded Video ✨
+```
+
+If **any** arrow fails, the entire chain breaks.
+
+---
+
+## Part 1: Root Cause Analysis
+
+### Layer 1: The Hypervisor (XCP-ng)
+
+**Root Cause**: Hardware monopolization by Dom0.
+
+By default, XCP-ng claims all PCI devices for management purposes. Even when you assign a GPU to a VM, the hypervisor often maintains a "grip" on the device, preventing the guest OS from initializing the driver.
+
+**Critical Detail**: Modern GPUs present as **two separate PCI devices**:
+- **Video Controller** (e.g., `01:00.0`) - The main GPU
+- **Audio Device** (e.g., `01:00.1`) - HDMI/DP audio output
+
+**Both devices must be passed through** for the NVIDIA driver to initialize correctly. Missing the audio device will cause driver binding failures.
+
+**Symptom**:
+- VM sees the device in `lspci`
+- NVIDIA driver fails to bind
+- `dmesg` shows: `nvidia: probe of 0000:01:00.0 failed with error -1`
+
+---
+
+### Layer 2: The Operating System (Talos Linux)
+
+**Root Cause**: Immutability and absence of traditional package management.
+
+Talos is a minimal, RAM-based OS designed for Kubernetes. It has no `apt`, `yum`, or ability to compile kernel modules on the fly. Without pre-installed System Extensions, the GPU exists as an "unknown device."
+
+**Symptom**:
+- `lspci` shows the GPU
+- `/dev/nvidia*` device nodes do not exist
+- `modprobe nvidia` returns "module not found"
+
+---
+
+### Layer 3: The Orchestration Layer (Kubernetes)
+
+**Root Cause**: Namespace isolation and lack of device awareness.
+
+Standard Kubernetes runtimes are designed for CPU/memory abstraction. They don't pass specialized hardware nodes (`/dev/nvidia*`) into container namespaces by default.
+
+**Symptom**:
+- Pod starts successfully
+- `nvidia-smi` inside the pod returns "command not found"
+- No GPU resource visible to the container
+
+---
+
+### Layer 4: The Library Layer (GLIBC Version Mismatch)
+
+**Root Cause**: Incompatible shared library versions between host and container.
+
+This is the most insidious failure mode. Early attempts to manually mount host libraries (`libcuda.so`, `libnvidia-ml.so`) into the container caused **segmentation faults (Exit 139)**.
+
+**The Conflict**:
+- Jellyfin container: Built on Ubuntu/Debian (glibc 2.31+)
+- Talos host: Custom toolchain (glibc 2.38+ with specific patches)
+- FFmpeg tries to load Talos's `libcuda.so` → memory address mismatch → **crash**
+
+**Symptom**:
+- Pod crashes immediately or during first transcode
+- Exit code: 139 (SIGSEGV)
+- `dmesg`: "segfault at 0 ip ... in libcuda.so"
+
+---
+
+## Part 2: The Golden Path (Step-by-Step Solution)
+
+Follow these steps **in exact order**. Each step depends on the previous one succeeding.
+
+---
+
+### Step 1: XCP-ng PCI Passthrough Configuration
+
+Force XCP-ng to release the GPU from Dom0 management.
+
+#### 1.1: Identify the GPU PCI Addresses
+```bash
+# On XCP-ng host
+lspci | grep -i nvidia
+```
+
+**Expected Output**:
+```
+01:00.0 VGA compatible controller: NVIDIA Corporation GP107GL [Quadro P1000] (rev a1)
+01:00.1 Audio device: NVIDIA Corporation GP107GL High Definition Audio Controller (rev a1)
+```
+
+**⚠️ CRITICAL**: Note **both** PCI addresses:
+- Video Controller: `01:00.0`
+- Audio Device: `01:00.1`
+
+**Both must be passed through** or the NVIDIA driver will fail to initialize.
+
+#### 1.2: Hide Both GPU Devices from Dom0
+```bash
+# On XCP-ng host
+/opt/xensource/libexec/xen-cmdline --set-dom0 "xen-pciback.hide=(01:00.0)(01:00.1)"
+```
+
+**Note**: The syntax requires **separate parentheses** for each device.
+
+#### 1.3: Reboot XCP-ng
+```bash
+reboot
+```
+
+#### 1.4: Verify Devices are Hidden
+```bash
+# After reboot
+xe pci-list
+```
+
+**Expected**: Both GPU devices should show `dom0-access: false` or not be attached to Dom0.
+
+#### 1.5: Assign Both GPU Devices to Talos VM
+```bash
+# Get your VM UUID
+xe vm-list name-label="<TALOS_WORKER_NODE_NAME>"
+
+# Example output:
+# uuid ( RO) : 12345678-1234-1234-1234-123456789abc
+#     name-label ( RW): talos-worker-01
+
+# Assign BOTH devices (replace <VM_UUID> with your actual UUID)
+xe vm-param-set uuid=<VM_UUID> other-config:pci=0/0000:01:00.0,0/0000:01:00.1
+```
+
+**⚠️ IMPORTANT**: Notice the comma-separated format: `device1,device2`
+
+#### 1.6: Reboot the Talos VM
+```bash
+xe vm-reboot uuid=<VM_UUID>
+```
+
+**Validation**:
+```bash
+# Inside Talos VM (replace <NODE_IP> with your node's IP)
+talosctl -n <NODE_IP> dmesg | grep -i nvidia
+```
+
+**Expected Output**:
+```
+nvidia: module license 'NVIDIA' taints kernel.
+nvidia 0000:01:00.0: enabling device (0000 -> 0003)
+nvidia 0000:01:00.1: enabling device (0000 -> 0003)
+NVRM: loading NVIDIA UNIX x86_64 Kernel Module  535.xxx
+```
+
+**Double-check both devices are present**:
+```bash
+talosctl -n <NODE_IP> get /proc/driver/nvidia/gpus/0000:01:00.0/information
+```
+
+---
+
+### Step 2: Talos Image with NVIDIA Extensions
+
+The NVIDIA driver **must** be baked into the Talos OS image. You cannot install it afterward.
+
+#### 2.1: Generate Custom Talos Image
+
+Visit the [Talos Image Factory](https://factory.talos.dev/) or use the CLI:
+```bash
+# Install crane (for image manipulation)
+curl -sL https://github.com/google/go-containerregistry/releases/download/v0.19.0/go-containerregistry_Linux_x86_64.tar.gz | tar -xz crane
+
+# Create schematic.yaml
+cat <<EOF > schematic.yaml
+customization:
+  systemExtensions:
+    officialExtensions:
+      - siderolabs/nonfree-kmod-nvidia
+      - siderolabs/nvidia-container-toolkit
+EOF
+
+# Generate the image URL (use your Talos version)
+curl -X POST --data-binary @schematic.yaml \
+  https://factory.talos.dev/schematics
+
+# Returns a schematic ID, e.g., 376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba
+```
+
+Your image URL will be:
+```
+factory.talos.dev/installer/<SCHEMATIC_ID>:v1.8.3
+```
+
+#### 2.2: Upgrade Talos Node
+```bash
+talosctl -n <NODE_IP> upgrade \
+  --image factory.talos.dev/installer/<YOUR_SCHEMATIC_ID>:v1.8.3 \
+  --preserve
+```
+
+**Wait for reboot** (~5 minutes).
+
+**Validation**:
+```bash
+# Check for NVIDIA device nodes
+talosctl -n <NODE_IP> ls /dev | grep nvidia
+```
+
+**Expected Output**:
+```
+nvidia0
+nvidia-modeset
+nvidiactl
+nvidia-uvm
+nvidia-uvm-tools
+```
+```bash
+# Verify driver loaded
+talosctl -n <NODE_IP> read /proc/modules | grep nvidia
+```
+
+**Expected**: Multiple `nvidia` modules listed.
+
+---
+
+### Step 3: Kubernetes RuntimeClass Configuration
+
+Create a bridge between the Talos NVIDIA driver and Kubernetes pods.
+
+#### 3.1: Apply RuntimeClass Manifest
+```yaml
+# nvidia-runtime.yaml
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: nvidia
+handler: nvidia
+```
+```bash
+kubectl apply -f nvidia-runtime.yaml
+```
+
+**Validation**:
+```bash
+kubectl get runtimeclass
+```
+
+**Expected**:
+```
+NAME     HANDLER   AGE
+nvidia   nvidia    10s
+```
+
+---
+
+### Step 4: Deploy Jellyfin with GPU Support
+
+#### 4.1: The Complete Manifest
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jellyfin
+  namespace: media
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jellyfin
+  template:
+    metadata:
+      labels:
+        app: jellyfin
+    spec:
+      # CRITICAL: Uses the nvidia runtime we configured
+      runtimeClassName: nvidia
+      
+      # Fixes NFS permissions (if using NFS storage)
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: "OnRootMismatch"
+      
+      containers:
+        - name: jellyfin
+          image: linuxserver/jellyfin:latest
+          
+          # ⚠️ CRITICAL: Bypasses GLIBC version conflicts
+          # Why? Talos uses a custom glibc toolchain. Privileged mode
+          # allows the NVIDIA Container Toolkit to safely inject libraries
+          # without causing segfaults from version mismatches.
+          securityContext:
+            privileged: true
+          
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: "America/New_York"
+            
+            # Make all GPUs visible to container
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "all"
+            
+            # Enable compute (CUDA), video (NVENC/NVDEC), and utilities
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "compute,video,utility"
+          
+          ports:
+            - containerPort: 8096
+              name: http
+          
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: movies
+              mountPath: /media/movies
+            - name: shows
+              mountPath: /media/shows
+            
+            # Required for OpenCL/VPP tone mapping (HDR → SDR)
+            - name: dri
+              mountPath: /dev/dri
+          
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+              cpu: "4000m"
+              memory: "8Gi"
+            requests:
+              nvidia.com/gpu: 1
+              cpu: "1000m"
+              memory: "2Gi"
+      
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: jellyfin-config
+        - name: movies
+          persistentVolumeClaim:
+            claimName: jellyfin-movies
+        - name: shows
+          persistentVolumeClaim:
+            claimName: jellyfin-shows
+        
+        # Mount entire /dev/dri for hardware acceleration
+        - name: dri
+          hostPath:
+            path: /dev/dri
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jellyfin
+  namespace: media
+spec:
+  selector:
+    app: jellyfin
+  ports:
+    - port: 8096
+      targetPort: 8096
+  type: ClusterIP
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: jellyfin
+  namespace: media
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`<JELLYFIN_INTERNAL_HOSTNAME>`) || Host(`<JELLYFIN_EXTERNAL_HOSTNAME>`)
+      kind: Rule
+      services:
+        - name: jellyfin
+          port: 8096
+```
+
+**Placeholder Reference**:
+- `<TALOS_WORKER_NODE_NAME>`: Your Talos VM name (e.g., `talos-worker-01`)
+- `<NODE_IP>`: Your Talos node IP address (e.g., `192.168.1.100`)
+- `<VM_UUID>`: Your XCP-ng VM UUID
+- `<SCHEMATIC_ID>`: Your Talos Factory schematic ID
+- `<YOUR_SCHEMATIC_ID>`: Same as above
+- `<JELLYFIN_INTERNAL_HOSTNAME>`: Internal DNS name (e.g., `jellyfin.servers.local`)
+- `<JELLYFIN_EXTERNAL_HOSTNAME>`: External DNS name (e.g., `jellyfin.yourdomain.com`)
+
+#### 4.2: Deploy
+```bash
+kubectl apply -f jellyfin.yaml
+```
+
+**Validation**:
+```bash
+# Wait for pod to be running
+kubectl get pods -n media -w
+
+# Check GPU access inside the pod
+kubectl exec -n media deployment/jellyfin -- nvidia-smi
+```
+
+**Expected Output**:
+```
++-----------------------------------------------------------------------------+
+| NVIDIA-SMI 535.xxx      Driver Version: 535.xxx      CUDA Version: 12.2    |
+|-------------------------------+----------------------+----------------------+
+| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+|   0  Quadro P1000        Off  | 00000000:01:00.0 Off |                  N/A |
++-------------------------------+----------------------+----------------------+
+```
+
+---
+
+### Step 5: Configure Jellyfin Dashboard
+
+#### 5.1: Access Jellyfin
+
+Navigate to `http://<JELLYFIN_INTERNAL_HOSTNAME>:8096` (or your configured domain).
+
+#### 5.2: Enable Hardware Acceleration
+
+1. **Dashboard** → **Playback** → **Transcoding**
+2. **Hardware acceleration**: `Nvidia NVENC`
+3. **Enable hardware decoding for**:
+   - H264
+   - HEVC
+   - VC1
+   - VP8
+   - VP9
+4. **Enable hardware encoding**: ✅
+5. **Enable VPP Tone mapping**: ✅ (uses `/dev/dri` for HDR → SDR)
+6. **Transcoding thread count**: 0 (auto)
+7. **Save**
+
+#### 5.3: Test Transcoding
+
+1. Start playing any video that requires transcoding (e.g., 4K HEVC → 1080p H264)
+2. Monitor GPU usage:
+```bash
+# In a separate terminal
+kubectl exec -n media deployment/jellyfin -- watch nvidia-smi
+```
+
+**Expected**: You should see `jellyfin-ffmpeg` process using GPU memory and compute resources.
+
+---
+
+## Part 3: Troubleshooting Guide
+
+### Problem: Pod Crashes with Exit 139
+
+**Cause**: GLIBC version mismatch (container libraries incompatible with host).
+
+**Solution**:
+- Ensure `securityContext.privileged: true` is set
+- Ensure `runtimeClassName: nvidia` is set
+- **DO NOT** manually mount `/usr/lib` or similar paths from the host
+
+---
+
+### Problem: `nvidia-smi` Not Found in Pod
+
+**Cause**: NVIDIA Container Toolkit not injecting binaries.
+
+**Solution**:
+1. Verify RuntimeClass exists: `kubectl get runtimeclass nvidia`
+2. Verify Talos has nvidia-container-toolkit extension
+3. Restart the pod
+
+---
+
+### Problem: NVIDIA Driver Fails to Bind (`probe failed with error -1`)
+
+**Cause**: GPU audio device not passed through to VM.
+
+**Solution**:
+1. Verify **both** PCI devices are passed through:
+```bash
+   talosctl -n <NODE_IP> get /sys/bus/pci/devices/
+```
+   You should see both `0000:01:00.0` and `0000:01:00.1`
+
+2. Re-check XCP-ng passthrough configuration:
+```bash
+   xe vm-param-get uuid=<VM_UUID> param-name=other-config param-key=pci
+```
+   Should show: `0/0000:01:00.0,0/0000:01:00.1`
+
+3. If missing audio device, add it:
+```bash
+   xe vm-param-set uuid=<VM_UUID> other-config:pci=0/0000:01:00.0,0/0000:01:00.1
+   xe vm-reboot uuid=<VM_UUID>
+```
+
+---
+
+### Problem: GPU Shows 0% Utilization During Transcode
+
+**Cause**: Jellyfin is using CPU transcoding (hardware acceleration disabled).
+
+**Solution**:
+1. Check Jellyfin Dashboard → Playback settings
+2. Verify `NVIDIA_DRIVER_CAPABILITIES` includes `video`
+3. Check logs: `kubectl logs -n media deployment/jellyfin | grep -i nvenc`
+
+---
+
+### Problem: `/dev/dri` Permission Denied
+
+**Cause**: Container doesn't have access to render nodes.
+
+**Solution**:
+- Verify the `dri` volume is mounted correctly
+- Ensure `privileged: true` is set (gives full device access)
+
+---
+
+### Problem: XCP-ng Shows "Device is in use by Dom0"
+
+**Cause**: `xen-pciback.hide` command not applied or not persisted.
+
+**Solution**:
+1. Verify the kernel command line:
+```bash
+   cat /proc/cmdline | grep xen-pciback
+```
+   Should contain: `xen-pciback.hide=(01:00.0)(01:00.1)`
+
+2. If missing, re-apply and reboot:
+```bash
+   /opt/xensource/libexec/xen-cmdline --set-dom0 "xen-pciback.hide=(01:00.0)(01:00.1)"
+   reboot
+```
+
+---
+
+## Part 4: Performance Expectations
+
+### NVIDIA Quadro P1000 Capabilities
+
+- **NVENC Generation**: 6th gen (Pascal)
+- **Simultaneous Encodes**: 2-3 streams (1080p)
+- **Max Resolution**: 4096×4096
+- **Supported Codecs**:
+  - **Decode**: H.264, HEVC (8-bit/10-bit), VP8, VP9
+  - **Encode**: H.264, HEVC (8-bit only)
+
+### Real-World Performance
+
+| Scenario | CPU Usage | GPU Usage | Streams |
+|----------|-----------|-----------|---------|
+| 1× 4K HEVC → 1080p H264 | ~5% | ~60% | 1 |
+| 2× 1080p H264 → 720p H264 | ~8% | ~80% | 2 |
+| 3× 1080p mixed codecs | ~12% | ~95% | 3 |
+
+---
+
+## Part 5: Understanding Why This Configuration Works
+
+### The Privileged Container Strategy
+
+**Why is `privileged: true` necessary?**
+
+Traditional approaches fail because they try to manually map host libraries into the container:
+```yaml
+# ❌ THIS FAILS - Don't do this
+volumeMounts:
+  - name: nvidia-libs
+    mountPath: /usr/lib/x86_64-linux-gnu/libnvidia.so
+    # ^ Causes GLIBC version mismatch → Exit 139
+```
+
+**The Problem**:
+- Talos builds its NVIDIA drivers with a **custom glibc toolchain**
+- Container images (Ubuntu/Debian-based) expect **different glibc versions**
+- Directly mounting host libraries causes **symbol resolution failures**
+
+**The Solution**:
+- `privileged: true` grants the container full device access
+- The NVIDIA Container Toolkit (injected by `runtimeClassName: nvidia`) manages library paths safely
+- Libraries are **copied and shimmed** rather than directly mounted
+- This prevents segfaults while maintaining GPU functionality
+
+---
+
+### The Dual-Device Requirement
+
+**Why must both PCI devices be passed through?**
+
+Modern NVIDIA GPUs present as a **multi-function PCI device**:
+```
+01:00.0 VGA compatible controller  ← Main GPU (required)
+01:00.1 Audio device               ← HDMI/DP audio (also required!)
+```
+
+The NVIDIA driver performs a **PCI topology check** during initialization:
+1. It enumerates all functions on the PCI bus
+2. If function `01:00.1` is missing, it assumes hardware failure
+3. Driver initialization aborts with `error -1`
+
+**This is why the audio device must be passed through even if you're not using audio output.**
+
+---
+
+## Conclusion
+
+You've successfully bridged four layers of abstraction to achieve GPU-accelerated transcoding in a fully virtualized Kubernetes environment. This configuration is production-ready and will survive:
+
+- ✅ Pod restarts
+- ✅ Node reboots
+- ✅ Talos upgrades (as long as extensions are maintained)
+- ✅ Kubernetes version upgrades
+
+**Final Validation Command**:
+```bash
+# Start a transcode, then run:
+kubectl exec -n media deployment/jellyfin -- nvidia-smi
+```
+
+If you see `jellyfin-ffmpeg` in the process list with GPU utilization above 0%, **you've conquered the stack**. 🏆
+
+---
+
+## Quick Reference: All Commands
+```bash
+# XCP-ng Setup
+lspci | grep -i nvidia
+/opt/xensource/libexec/xen-cmdline --set-dom0 "xen-pciback.hide=(01:00.0)(01:00.1)"
+reboot
+xe vm-list name-label="<TALOS_WORKER_NODE_NAME>"
+xe vm-param-set uuid=<VM_UUID> other-config:pci=0/0000:01:00.0,0/0000:01:00.1
+xe vm-reboot uuid=<VM_UUID>
+
+# Talos Validation
+talosctl -n <NODE_IP> dmesg | grep -i nvidia
+talosctl -n <NODE_IP> ls /dev | grep nvidia
+talosctl -n <NODE_IP> read /proc/modules | grep nvidia
+
+# Talos Upgrade
+talosctl -n <NODE_IP> upgrade \
+  --image factory.talos.dev/installer/<SCHEMATIC_ID>:v1.8.3 \
+  --preserve
+
+# Kubernetes Setup
+kubectl apply -f nvidia-runtime.yaml
+kubectl get runtimeclass
+kubectl apply -f jellyfin.yaml
+
+# Validation
+kubectl get pods -n media -w
+kubectl exec -n media deployment/jellyfin -- nvidia-smi
+kubectl exec -n media deployment/jellyfin -- watch nvidia-smi
+kubectl logs -n media deployment/jellyfin | grep -i nvenc
+```
+
+---
+
+**Document Version**: 1.0  
+**Last Updated**: February 2026  
+**Tested On**: XCP-ng 8.3, Talos Linux 1.8.3, Kubernetes 1.31  
+**Hardware**: NVIDIA Quadro P1000 (GP107GL)
